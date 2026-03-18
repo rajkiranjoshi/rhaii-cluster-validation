@@ -57,11 +57,19 @@ uninstall:
 test:
 	go test ./... -v
 
+IMG_TOOLS ?= quay.io/opendatahub/rhaii-rdma-tools:latest
+
 container:
 	$(CONTAINER_RUNTIME) build --build-arg VERSION=$(VERSION) -t $(IMG) .
 
+container-rdma:
+	$(CONTAINER_RUNTIME) build -f Dockerfile.rdma-tools --build-arg VERSION=$(VERSION) -t $(IMG_TOOLS) .
+
 push:
 	$(CONTAINER_RUNTIME) push $(IMG)
+
+push-rdma:
+	$(CONTAINER_RUNTIME) push $(IMG_TOOLS)
 
 deploy: install
 	kubectl rhaii-validate all
