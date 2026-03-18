@@ -1,6 +1,9 @@
-ARG CUDA_MAJOR=12
-ARG CUDA_MINOR=9
-ARG CUDA_PATCH=1
+# Base images for builder and runtime stages
+#  tested:
+#   nvcr.io/nvidia/cuda:13.0.0-devel-ubi9 / nvcr.io/nvidia/cuda:13.0.0-runtime-ubi9
+#   quay.io/aipcc/base-images/cuda-13.0-el9.6:3.4 (includes CUDA devel + runtime)
+ARG BUILDER_IMAGE=quay.io/aipcc/base-images/cuda-13.0-el9.6:3.4
+ARG RUNTIME_IMAGE=quay.io/aipcc/base-images/cuda-13.0-el9.6:3.4
 
 # Tool versions (pinned for reproducibility)
 ARG PERFTEST_VERSION=25.10.0-0.128
@@ -8,9 +11,12 @@ ARG PERFTEST_VERSION=25.10.0-0.128
 # ============================================================================
 # Builder Stage: Build perftest from source (needs CUDA headers)
 # ============================================================================
-FROM nvcr.io/nvidia/cuda:${CUDA_MAJOR}.${CUDA_MINOR}.${CUDA_PATCH}-devel-ubi9 AS builder
+FROM ${BUILDER_IMAGE} AS builder
 
 ARG PERFTEST_VERSION
+
+# Needed with aipcc image
+USER root
 
 # Install build dependencies
 RUN dnf install -y \
@@ -31,8 +37,10 @@ RUN git clone --branch ${PERFTEST_VERSION} --depth 1 https://github.com/linux-rd
 # ============================================================================
 # Final Stage: Compact runtime image
 # ============================================================================
-ARG CUDA_MAJOR CUDA_MINOR CUDA_PATCH
-FROM nvcr.io/nvidia/cuda:${CUDA_MAJOR}.${CUDA_MINOR}.${CUDA_PATCH}-runtime-ubi9
+FROM ${RUNTIME_IMAGE}
+
+# Needed with aipcc image
+USER root
 
 WORKDIR /root
 
@@ -43,7 +51,7 @@ RUN dnf install -y \
     iperf3 tcpdump pciutils \
     && dnf clean all
 
-# Install RDMA libraries from UBI (matches what perftest was compiled against)
+# Install RDMA libraries (matches what perftest was compiled against)
 RUN dnf install -y libibverbs libibumad librdmacm && dnf clean all
 
 # Copy perftest binaries from builder
