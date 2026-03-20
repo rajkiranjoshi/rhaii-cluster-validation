@@ -26,11 +26,10 @@ jobs:
 
       - name: Run agent locally (expect check failures, no runtime errors)
         run: |
-          # Run with --no-wait so it exits immediately.
           # Checks will FAIL (no GPU/RDMA on CI runner) — that's expected.
           # What we're testing: no panics, no build errors, clean JSON output.
           set +e
-          ./bin/rhaii-validator run --no-wait --node-name ci-runner 2>stderr.log >stdout.log
+          ./bin/rhaii-validator run --node-name ci-runner 2>stderr.log >stdout.log
           exit_code=$?
           set -e
 
@@ -70,7 +69,7 @@ jobs:
       - name: Run container e2e (expect check failures, no runtime errors)
         run: |
           set +e
-          docker run --rm rhaii-validator:ci run --no-wait --node-name ci-container 2>stderr.log >stdout.log
+          docker run --rm rhaii-validator:ci run --node-name ci-container 2>stderr.log >stdout.log
           exit_code=$?
           set -e
 
