@@ -19,11 +19,6 @@ type Runner struct {
 	log      io.Writer // Progress lines go here (stderr)
 }
 
-// TopologyProvider is implemented by checks that discover GPU/NIC topology.
-type TopologyProvider interface {
-	Topology() *checks.NodeTopology
-}
-
 // New creates a new Runner for the given node.
 func New(nodeName string, output io.Writer) *Runner {
 	return &Runner{
@@ -63,15 +58,6 @@ func (r *Runner) Run(ctx context.Context) (checks.NodeReport, error) {
 		// Progress to stderr (won't interfere with JSON on stdout)
 		fmt.Fprintf(r.log, "[%s] %s/%s: %s\n",
 			result.Status, result.Category, result.Name, result.Message)
-	}
-
-	// Attach topology if any check provided it
-	for _, c := range r.checks {
-		if tp, ok := c.(TopologyProvider); ok {
-			if topo := tp.Topology(); topo != nil {
-				report.Topology = topo
-			}
-		}
 	}
 
 	// Buffer JSON and write all at once to avoid interleaving with stderr

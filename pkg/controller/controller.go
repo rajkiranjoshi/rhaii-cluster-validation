@@ -384,7 +384,16 @@ func (c *Controller) Run(ctx context.Context) error {
 				fmt.Fprintln(c.output, "  Hint: run 'kubectl rhaii-validate net-checks' first to generate topology")
 			} else {
 				for node, topo := range storedTopo {
-					netReports = append(netReports, checks.NodeReport{Node: node, Topology: topo})
+					netReports = append(netReports, checks.NodeReport{
+						Node: node,
+						Results: []checks.Result{{
+							Node:     node,
+							Category: "networking_rdma",
+							Name:     "gpu_nic_topology",
+							Status:   checks.StatusPass,
+							Details:  topo,
+						}},
+					})
 				}
 				fmt.Fprintf(c.output, "  Loaded topology for %d node(s) from stored report\n", len(storedTopo))
 			}
@@ -875,6 +884,7 @@ func (c *Controller) deployNetCheckJobs(ctx context.Context) error {
 		container.Env = append(container.Env,
 			corev1.EnvVar{Name: "GPU_VENDOR", Value: string(c.gpuVendor)},
 			corev1.EnvVar{Name: "CHECK_MODE", Value: "networking"},
+			corev1.EnvVar{Name: "RDMA_MODE", Value: c.cfg.Jobs.RDMAType},
 		)
 
 		_, err := c.client.BatchV1().Jobs(c.opts.Namespace).Create(ctx, job, metav1.CreateOptions{})
@@ -1135,7 +1145,7 @@ func (c *Controller) runBandwidthJobs(ctx context.Context, gpuNodes []string, re
 
 // mergeNodeReports combines reports from multiple phases (e.g. GPU checks and
 // networking checks) into a single slice. Reports for the same node are merged
-// by appending results and taking whichever topology is non-nil.
+// by appending results.
 func mergeNodeReports(reportSets ...[]checks.NodeReport) []checks.NodeReport {
 	byNode := make(map[string]*checks.NodeReport)
 	var order []string
@@ -1149,9 +1159,6 @@ func mergeNodeReports(reportSets ...[]checks.NodeReport) []checks.NodeReport {
 				order = append(order, r.Node)
 			} else {
 				existing.Results = append(existing.Results, r.Results...)
-				if r.Topology != nil {
-					existing.Topology = r.Topology
-				}
 			}
 		}
 	}
@@ -1167,8 +1174,8 @@ func mergeNodeReports(reportSets ...[]checks.NodeReport) []checks.NodeReport {
 func buildTopologyMap(reports []checks.NodeReport) map[string]*checks.NodeTopology {
 	m := make(map[string]*checks.NodeTopology)
 	for _, r := range reports {
-		if r.Topology != nil && len(r.Topology.Pairs) > 0 {
-			m[r.Node] = r.Topology
+		if topo := checks.ExtractTopology(r); topo != nil {
+			m[r.Node] = topo
 		}
 	}
 	return m
@@ -1534,14 +1541,14 @@ func (c *Controller) printReport(reports []checks.NodeReport, jobResults []jobru
 	// Print topology if available
 	hasTopology := false
 	for _, report := range reports {
-		if report.Topology != nil && len(report.Topology.Pairs) > 0 {
+		if topo := checks.ExtractTopology(report); topo != nil && len(topo.Pairs) > 0 {
 			if !hasTopology {
 				fmt.Fprintln(c.output)
 				fmt.Fprintln(c.output, "GPU-NIC Topology:")
 				hasTopology = true
 			}
 			var pairDescs []string
-			for _, p := range report.Topology.Pairs {
+			for _, p := range topo.Pairs {
 				pairDescs = append(pairDescs, fmt.Sprintf("GPU%d↔%s(NUMA%d)", p.GPUID, p.NICDev, p.NUMAID))
 			}
 			fmt.Fprintf(c.output, "  %s: %s\n", report.Node, strings.Join(pairDescs, ", "))

@@ -14,6 +14,7 @@ jobs:
   limits:
     rdma/ib: "1"      # Boolean flag, not a count.
   annotations: {}
+  rdma_type: ib
 
 gpu:
   min_driver_version: "535.0"

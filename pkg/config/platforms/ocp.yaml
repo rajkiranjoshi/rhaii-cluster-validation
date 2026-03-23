@@ -15,6 +15,7 @@ jobs:
     #   rdma/rdma_shared_device_a: "1"
   limits: {}
   annotations: {}
+  # rdma_type: roce or ib (set based on your cluster's RDMA fabric)
 
 gpu:
   min_driver_version: "535.0"

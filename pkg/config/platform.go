@@ -38,6 +38,7 @@ type ResourceConfig struct {
 	Requests    map[string]string `yaml:"requests,omitempty" json:"requests,omitempty"`
 	Limits      map[string]string `yaml:"limits,omitempty" json:"limits,omitempty"`
 	Annotations map[string]string `yaml:"annotations,omitempty" json:"annotations,omitempty"`
+	RDMAType    string            `yaml:"rdma_type,omitempty" json:"rdma_type,omitempty"`
 }
 
 // GPUVendor represents the GPU hardware vendor.

@@ -10,8 +10,11 @@ jobs:
   requests:
     cpu: "500m"
     memory: "512Mi"
-  limits: {}
+    rdma/shared_ib: "1" # Boolean flag, not a count.
+  limits:
+    rdma/shared_ib: "1" # Boolean flag, not a count.
   annotations: {}
+  rdma_type: ib
 
 gpu:
   min_driver_version: "535.0"
