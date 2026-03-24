@@ -34,8 +34,8 @@ func main() {
 
   gpu          - GPU hardware checks (driver, ECC, memory)
   networking   - Network bandwidth tests (iperf3, RDMA)
-  all          - Run all checks (gpu + networking)
-  deps         - Check operators and CRDs (future)`,
+  all          - Run all checks (deps + gpu + networking)
+  deps         - Check CRDs and operator health (Gateway API, InferencePool, LWS, cert-manager, Istio)`,
 	}
 
 	rootCmd.AddCommand(newGPUCmd())
@@ -171,27 +171,42 @@ func newAllCmd() *cobra.Command {
 	return cmd
 }
 
-// --- deps subcommand (future) ---
+// --- deps subcommand ---
 
 func newDepsCmd() *cobra.Command {
+	var opts controller.Options
+
 	cmd := &cobra.Command{
 		Use:   "deps",
-		Short: "Check required operators and CRDs (coming soon)",
-		Long: `Validates that required operators and CRDs are installed:
-  - GPU Operator
-  - Network Operator
-  - RDMA shared device plugin
-  - NFD (Node Feature Discovery)`,
+		Short: "Check required CRDs and dependencies",
+		Long: `Validates that required CRDs and operators are healthy:
+
+CRDs:
+  - gateways.gateway.networking.k8s.io              (Gateway API)
+  - httproutes.gateway.networking.k8s.io             (Gateway API)
+  - inferencepools.inference.networking.x-k8s.io     (InferencePool)
+  - leaderworkersets.leaderworkerset.x-k8s.io        (LeaderWorkerSet)
+  - certificates.cert-manager.io                     (cert-manager)
+
+Operators:
+  - cert-manager        (pods running in cert-manager namespace)
+  - Istio               (pods running in istio-system namespace)
+  - LeaderWorkerSet     (pods running in lws-system / openshift-lws-operator)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Dependency checks not yet implemented.")
-			fmt.Println("Planned checks:")
-			fmt.Println("  - GPU Operator installed and running")
-			fmt.Println("  - Network Operator installed and running")
-			fmt.Println("  - RDMA shared device plugin present")
-			fmt.Println("  - Node Feature Discovery labels present")
-			return nil
+			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer cancel()
+
+			ctrl, err := controller.New(opts, os.Stdout)
+			if err != nil {
+				return err
+			}
+			return ctrl.RunDeps(ctx)
 		},
 	}
+
+	cmd.Flags().StringVar(&opts.Kubeconfig, "kubeconfig", "", "Path to kubeconfig")
+	cmd.Flags().StringVar(&opts.ConfigFile, "config", "", "Path to config override file (for CRD min version overrides)")
+	cmd.Flags().StringVarP(&opts.OutputFormat, "output", "o", "table", "Output format: table or json")
 	return cmd
 }
 
@@ -286,8 +301,8 @@ func newRunCmd() *cobra.Command {
 
 			cfg, err := config.Load(config.PlatformUnknown, configFile)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to load config: %v, using defaults\n", err)
-				cfg, _ = config.GetConfig(config.PlatformAKS)
+				fmt.Fprintf(os.Stderr, "Warning: failed to load config override: %v, using platform defaults\n", err)
+				cfg, _ = config.GetConfig(config.PlatformUnknown)
 			}
 			fmt.Fprintf(os.Stderr, "Platform config: %s\n", cfg.Platform)
 

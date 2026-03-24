@@ -29,8 +29,26 @@ type PlatformConfig struct {
 	Agent      ResourceConfig `yaml:"agent" json:"agent"`
 	Jobs       ResourceConfig `yaml:"jobs" json:"jobs"`
 	GPU        GPUConfig      `yaml:"gpu" json:"gpu"`
+	CRDs       CRDConfig      `yaml:"crds" json:"crds"`
+	Operators  OperatorConfig `yaml:"operators" json:"operators"`
 	Thresholds ThresholdConfig `yaml:"thresholds" json:"thresholds"`
 	Images     ImageConfig    `yaml:"images" json:"images"`
+}
+
+// CRDConfig holds minimum version requirements for required CRDs.
+type CRDConfig struct {
+	// Map of CRD name to minimum required API version.
+	// Empty string means any version is accepted.
+	MinAPIVersions map[string]string `yaml:"min_api_versions,omitempty" json:"min_api_versions,omitempty"`
+	// Map of CRD name to minimum required release version (semver).
+	// Empty string means report only, don't enforce.
+	MinReleaseVersions map[string]string `yaml:"min_release_versions,omitempty" json:"min_release_versions,omitempty"`
+}
+
+// OperatorConfig holds platform-specific namespace overrides for operator health checks.
+type OperatorConfig struct {
+	// Map of operator name (e.g. "cert-manager", "istio", "lws") to namespaces to check.
+	Namespaces map[string][]string `yaml:"namespaces,omitempty" json:"namespaces,omitempty"`
 }
 
 // ResourceConfig holds resource requests, limits, and annotations for pods.

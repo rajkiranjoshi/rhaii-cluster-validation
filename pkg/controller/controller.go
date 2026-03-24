@@ -11,6 +11,8 @@ import (
 
 	"github.com/opendatahub-io/rhaii-cluster-validation/deploy"
 	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/checks"
+	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/checks/crd"
+	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/checks/operator"
 	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/checks/rdma"
 	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/config"
 	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/jobrunner"
@@ -62,8 +64,10 @@ type Controller struct {
 	gpuNodeLabel string             // label used to discover GPU nodes (empty = fallback to resources)
 	gpuNodes     []string           // discovered GPU node names
 	gpuCounts    map[string]int64   // GPU count per node (from allocatable)
-	gpuResource  corev1.ResourceName // e.g. "nvidia.com/gpu" or "amd.com/gpu"
-	jobs         []jobrunner.Job
+	gpuResource    corev1.ResourceName // e.g. "nvidia.com/gpu" or "amd.com/gpu"
+	jobs           []jobrunner.Job
+	clusterResults []checks.Result // Tier 1 (API) check results (CRDs, etc.)
+	reportStored   bool            // true after storeReport succeeds
 }
 
 // AddJob registers a multi-node job to run when --bandwidth is enabled.
@@ -71,18 +75,94 @@ func (c *Controller) AddJob(j jobrunner.Job) {
 	c.jobs = append(c.jobs, j)
 }
 
+// RunCRDChecks checks for required CRDs via the Kubernetes API (Tier 1).
+func (c *Controller) RunCRDChecks(ctx context.Context) []checks.Result {
+	checker := crd.NewChecker(c.client, nil, c.cfg.CRDs.MinAPIVersions, c.cfg.CRDs.MinReleaseVersions)
+	return checker.Run(ctx)
+}
+
+// RunOperatorChecks checks that required operators have healthy pods (Tier 1).
+func (c *Controller) RunOperatorChecks(ctx context.Context) []checks.Result {
+	checker := operator.NewChecker(c.client, nil, c.cfg.Operators.Namespaces)
+	return checker.Run(ctx)
+}
+
+// RunDeps runs Tier 1 dependency checks (CRDs + operator health) and prints the report.
+// This is a lightweight path that doesn't create any cluster resources.
+func (c *Controller) RunDeps(ctx context.Context) error {
+	// Use stderr for progress so JSON mode stays machine-parseable on stdout
+	log := c.output
+	if c.opts.OutputFormat == "json" {
+		log = io.Discard
+	}
+
+	fmt.Fprintln(log, "=== RHAII Dependency Checks ===")
+	fmt.Fprintln(log)
+
+	// Detect platform and load config so CRD min versions are available
+	fmt.Fprintln(log, "Detecting platform...")
+	c.platform = config.DetectPlatform(ctx, c.client)
+	cfg, err := config.Load(c.platform, c.opts.ConfigFile)
+	if err != nil {
+		fmt.Fprintf(log, "  Warning: failed to load config override: %v, using platform defaults\n", err)
+		cfg, _ = config.GetConfig(c.platform)
+	}
+	c.cfg = cfg
+	fmt.Fprintf(log, "  Platform: %s\n", c.platform)
+
+	fmt.Fprintln(log, "[CRD Checks] Checking required CRDs...")
+	c.clusterResults = c.RunCRDChecks(ctx)
+	for _, r := range c.clusterResults {
+		fmt.Fprintf(log, "  [%s] %s: %s\n", r.Status, r.Name, r.Message)
+	}
+	fmt.Fprintln(log)
+
+	fmt.Fprintln(log, "[Operator Checks] Checking operator health...")
+	operatorResults := c.RunOperatorChecks(ctx)
+	c.clusterResults = append(c.clusterResults, operatorResults...)
+	for _, r := range operatorResults {
+		fmt.Fprintf(log, "  [%s] %s: %s\n", r.Status, r.Name, r.Message)
+	}
+	fmt.Fprintln(log)
+
+	var hasFailures bool
+	if c.opts.OutputFormat == "json" {
+		hasFailures = c.printJSONReport(nil, nil)
+	} else {
+		hasFailures = c.printReport(nil, nil)
+	}
+
+	if hasFailures {
+		return fmt.Errorf("dependency check failed: one or more checks reported FAIL")
+	}
+	return nil
+}
+
 // storeReport saves the JSON report to a ConfigMap so it persists after cleanup.
 func (c *Controller) storeReport(ctx context.Context, reports []checks.NodeReport, jobResults []jobrunner.JobResult) error {
 	type jsonReport struct {
-		Platform   string               `json:"platform"`
-		Timestamp  string               `json:"timestamp"`
-		Nodes      []checks.NodeReport  `json:"nodes"`
-		JobResults []jobrunner.JobResult `json:"job_results,omitempty"`
-		Summary    map[string]int       `json:"summary"`
-		Status     string               `json:"status"`
+		Platform      string               `json:"platform"`
+		Timestamp     string               `json:"timestamp"`
+		ClusterChecks []checks.Result      `json:"cluster_checks,omitempty"`
+		Nodes         []checks.NodeReport  `json:"nodes"`
+		JobResults    []jobrunner.JobResult `json:"job_results,omitempty"`
+		Summary       map[string]int       `json:"summary"`
+		Status        string               `json:"status"`
 	}
 
 	pass, warn, fail, skip := 0, 0, 0, 0
+	for _, r := range c.clusterResults {
+		switch r.Status {
+		case checks.StatusPass:
+			pass++
+		case checks.StatusWarn:
+			warn++
+		case checks.StatusFail:
+			fail++
+		case checks.StatusSkip:
+			skip++
+		}
+	}
 	for _, report := range reports {
 		for _, r := range report.Results {
 			switch r.Status {
@@ -116,12 +196,13 @@ func (c *Controller) storeReport(ctx context.Context, reports []checks.NodeRepor
 	}
 
 	r := jsonReport{
-		Platform:   string(c.platform),
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
-		Nodes:      reports,
-		JobResults: jobResults,
-		Summary:    map[string]int{"pass": pass, "warn": warn, "fail": fail, "skip": skip},
-		Status:     status,
+		Platform:      string(c.platform),
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		ClusterChecks: c.clusterResults,
+		Nodes:         reports,
+		JobResults:    jobResults,
+		Summary:       map[string]int{"pass": pass, "warn": warn, "fail": fail, "skip": skip},
+		Status:        status,
 	}
 
 	data, err := json.MarshalIndent(r, "", "  ")
@@ -153,6 +234,7 @@ func (c *Controller) storeReport(ctx context.Context, reports []checks.NodeRepor
 		return err
 	}
 
+	c.reportStored = true
 	fmt.Fprintf(c.output, "  Report stored in ConfigMap %s/%s\n", c.opts.Namespace, reportCMName)
 	return nil
 }
@@ -314,15 +396,51 @@ func (c *Controller) Run(ctx context.Context) error {
 		}
 	}
 
-	// Step 5: Discover GPU nodes
-	fmt.Fprintln(c.output, "[Step 5] Discovering GPU nodes...")
+	// Step 5: Tier 1 checks (CRDs + operator health)
+	if c.opts.CheckMode == "all" || c.opts.CheckMode == "deps" {
+		fmt.Fprintln(c.output, "[Step 5] Checking required CRDs...")
+		c.clusterResults = c.RunCRDChecks(ctx)
+		for _, r := range c.clusterResults {
+			fmt.Fprintf(c.output, "  [%s] %s: %s\n", r.Status, r.Name, r.Message)
+		}
+
+		fmt.Fprintln(c.output, "[Step 5b] Checking operator health...")
+		operatorResults := c.RunOperatorChecks(ctx)
+		c.clusterResults = append(c.clusterResults, operatorResults...)
+		for _, r := range operatorResults {
+			fmt.Fprintf(c.output, "  [%s] %s: %s\n", r.Status, r.Name, r.Message)
+		}
+	}
+
+	// Step 6: Discover GPU nodes
+	fmt.Fprintln(c.output, "[Step 6] Discovering GPU nodes...")
 	gpuNodes, err := c.discoverGPUNodes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to discover GPU nodes: %w", err)
 	}
 	c.gpuNodes = gpuNodes
 	if len(gpuNodes) == 0 {
-		fmt.Fprintln(c.output, "  No GPU nodes found. Nothing to validate.")
+		fmt.Fprintln(c.output, "  No GPU nodes found.")
+
+		// Still report Tier 1 results (CRD checks) even without GPU nodes
+		if len(c.clusterResults) > 0 {
+			if c.opts.OutputFormat == "json" {
+				c.printJSONReport(nil, nil)
+			} else {
+				c.printReport(nil, nil)
+			}
+		}
+
+		hasCRDFailures := false
+		for _, r := range c.clusterResults {
+			if r.Status == checks.StatusFail {
+				hasCRDFailures = true
+				break
+			}
+		}
+		if hasCRDFailures {
+			return fmt.Errorf("validation failed: one or more dependency checks reported FAIL")
+		}
 		return nil
 	}
 	fmt.Fprintf(c.output, "  Found %d GPU node(s): %s\n", len(gpuNodes), strings.Join(gpuNodes, ", "))
@@ -1555,6 +1673,27 @@ func (c *Controller) printReport(reports []checks.NodeReport, jobResults []jobru
 	fmt.Fprintf(c.output, "%-20s %-30s %-35s %-8s %s\n", "GROUP", "CHECK", "NODE", "STATUS", "MESSAGE")
 	fmt.Fprintln(c.output, strings.Repeat("-", 130))
 
+	for _, r := range c.clusterResults {
+		fmt.Fprintf(c.output, "%-20s %-30s %-35s %-8s %s\n",
+			r.Category, r.Name, "(cluster)", r.Status, r.Message)
+
+		if r.Remediation != "" {
+			fmt.Fprintf(c.output, "%-20s %-30s %-35s %-8s Fix: %s\n",
+				"", "", "", "", r.Remediation)
+		}
+
+		switch r.Status {
+		case checks.StatusPass:
+			pass++
+		case checks.StatusWarn:
+			warn++
+		case checks.StatusFail:
+			fail++
+		case checks.StatusSkip:
+			skip++
+		}
+	}
+
 	for _, report := range reports {
 		for _, r := range report.Results {
 			node := r.Node
@@ -1612,9 +1751,11 @@ func (c *Controller) printReport(reports []checks.NodeReport, jobResults []jobru
 		fmt.Fprintln(c.output, "Status:  READY")
 	}
 
-	fmt.Fprintln(c.output)
-	fmt.Fprintln(c.output, "Report:")
-	fmt.Fprintf(c.output, "  kubectl get cm %s -n %s -o jsonpath='{.data.report\\.json}' | jq .\n", reportCMName, c.opts.Namespace)
+	if c.reportStored {
+		fmt.Fprintln(c.output)
+		fmt.Fprintln(c.output, "Report:")
+		fmt.Fprintf(c.output, "  kubectl get cm %s -n %s -o jsonpath='{.data.report\\.json}' | jq .\n", reportCMName, c.opts.Namespace)
+	}
 	fmt.Fprintln(c.output)
 
 	return fail > 0
@@ -1622,14 +1763,27 @@ func (c *Controller) printReport(reports []checks.NodeReport, jobResults []jobru
 
 func (c *Controller) printJSONReport(reports []checks.NodeReport, jobResults []jobrunner.JobResult) bool {
 	type jsonReport struct {
-		Platform   string                `json:"platform"`
-		Nodes      []checks.NodeReport   `json:"nodes"`
-		JobResults []jobrunner.JobResult  `json:"job_results,omitempty"`
-		Summary    map[string]int        `json:"summary"`
-		Status     string                `json:"status"`
+		Platform      string                `json:"platform"`
+		ClusterChecks []checks.Result       `json:"cluster_checks,omitempty"`
+		Nodes         []checks.NodeReport   `json:"nodes"`
+		JobResults    []jobrunner.JobResult  `json:"job_results,omitempty"`
+		Summary       map[string]int        `json:"summary"`
+		Status        string                `json:"status"`
 	}
 
 	pass, warn, fail, skip := 0, 0, 0, 0
+	for _, r := range c.clusterResults {
+		switch r.Status {
+		case checks.StatusPass:
+			pass++
+		case checks.StatusWarn:
+			warn++
+		case checks.StatusFail:
+			fail++
+		case checks.StatusSkip:
+			skip++
+		}
+	}
 	for _, report := range reports {
 		for _, r := range report.Results {
 			switch r.Status {
@@ -1663,11 +1817,12 @@ func (c *Controller) printJSONReport(reports []checks.NodeReport, jobResults []j
 	}
 
 	r := jsonReport{
-		Platform:   string(c.platform),
-		Nodes:      reports,
-		JobResults: jobResults,
-		Summary:    map[string]int{"pass": pass, "warn": warn, "fail": fail, "skip": skip},
-		Status:     status,
+		Platform:      string(c.platform),
+		ClusterChecks: c.clusterResults,
+		Nodes:         reports,
+		JobResults:    jobResults,
+		Summary:       map[string]int{"pass": pass, "warn": warn, "fail": fail, "skip": skip},
+		Status:        status,
 	}
 
 	data, _ := json.MarshalIndent(r, "", "  ")
