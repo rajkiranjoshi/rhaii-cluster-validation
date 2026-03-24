@@ -59,15 +59,18 @@ type GPUNICPair struct {
 	NICDev     string `json:"nic_dev"`
 	NICNuma    int    `json:"nic_numa"`
 	NICPCIAddr string `json:"nic_pci_addr,omitempty"`
+	PCIeHops   int    `json:"pcie_hops"`
 }
 
 // NodeTopology holds the GPU-NIC-NUMA mapping for a node.
 type NodeTopology struct {
-	GPUCount int          `json:"gpu_count"`
-	NICCount int          `json:"nic_count"`
-	GPUList  []GPUInfo    `json:"gpu_list,omitempty"`
-	NICList  []NICInfo    `json:"nic_list,omitempty"`
-	Pairs    []GPUNICPair `json:"pairs"`
+	GPUCount        int          `json:"gpu_count"`
+	NICCount        int          `json:"nic_count"`
+	IsFlat          bool         `json:"is_flat"`
+	PairingStrategy string       `json:"pairing_strategy"`
+	GPUList         []GPUInfo    `json:"gpu_list,omitempty"`
+	NICList         []NICInfo    `json:"nic_list,omitempty"`
+	Pairs           []GPUNICPair `json:"pairs"`
 }
 
 // NodeReport is the complete output from an agent run on a single node.
