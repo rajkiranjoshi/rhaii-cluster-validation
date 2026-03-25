@@ -96,7 +96,7 @@ func ExtractTopology(report NodeReport) *NodeTopology {
 			continue
 		}
 		var topo NodeTopology
-		if json.Unmarshal(data, &topo) == nil && len(topo.Pairs) > 0 {
+		if json.Unmarshal(data, &topo) == nil {
 			return &topo
 		}
 	}
