@@ -13,7 +13,7 @@ kubectl plugin for validating GPU cluster readiness for AI/ML workloads. Checks 
 
 ```bash
 kubectl rhaii-validate gpu            # GPU hardware checks (driver, ECC)
-kubectl rhaii-validate networking     # Network bandwidth tests (iperf3, RDMA)
+kubectl rhaii-validate networking     # Network tests (iperf3, netperf, RDMA)
 kubectl rhaii-validate all            # Everything
 kubectl rhaii-validate deps           # Check operators/CRDs (future)
 kubectl rhaii-validate clean          # Remove all validation resources
@@ -46,8 +46,9 @@ kubectl rhaii-validate all
     |       |
     +-- Collects JSON results from pod logs
     |
-    +-- Multi-node bandwidth jobs (ring topology):
+    +-- Multi-node network test jobs (ring topology):
     |       +-- iperf3: TCP bandwidth per node pair
+    |       +-- netperf: TCP latency (TCP_RR) per node pair
     |       +-- ib_write_bw: RDMA per GPU-NIC pair (from topology)
     |       +-- RDMA skipped if no RDMA resource configured
     |       +-- Jobs use image from manifests/image-references/jobs.yaml
@@ -61,11 +62,12 @@ kubectl rhaii-validate all
 
 | | DaemonSet (per-node) | Jobs (multi-node) |
 |---|---|---|
-| Purpose | Hardware checks | Bandwidth tests |
+| Purpose | Hardware checks | Network tests (bandwidth + latency) |
 | Image | rhaii-validator (your build) | llm-d-rdma-tools-dev (from jobs.yaml) |
 | GPU request | None (privileged + chroot) | 1 per pod (auto-detected) |
 | Host access | chroot /host | None (self-contained image) |
 | Checks | `gpu` or `all` mode | `networking` or `all` mode |
+| Tools | nvidia-smi, rocm-smi, ibv_devices | iperf3, netperf, ib_write_bw |
 
 ## Project Structure
 
@@ -86,7 +88,8 @@ rhaii-cluster-validation/
 │   │   │   ├── status.go          # RDMA NIC status (ibstat/sysfs)
 │   │   │   └── rdmabw_job.go      # ib_write_bw job (-d device --use_cuda gpu)
 │   │   └── networking/
-│   │       └── iperf_job.go       # iperf3 TCP bandwidth job
+│   │       ├── iperf_job.go       # iperf3 TCP bandwidth job
+│   │       └── netperf_job.go     # netperf TCP latency job (TCP_RR)
 │   ├── config/
 │   │   ├── platform.go            # PlatformConfig, GPUVendor, ResourceConfig
 │   │   ├── detect.go              # Platform auto-detection (all nodes scanned)
@@ -135,14 +138,15 @@ gpu:
   min_driver_version: "535.0"
 
 thresholds:
-  tcp_bandwidth_gbps:
-    pass: 25
-    warn: 10
-    fail: 5
+  tcp_bandwidth_gbps:  # Higher is better: >= pass = PASS, >= warn = WARN, < warn = FAIL
+    pass: 5
+    warn: 1
+  tcp_latency_ms:      # Lower is better: <= pass = PASS, <= warn = WARN, > warn = FAIL
+    pass: 0.5
+    warn: 1.0
   rdma_bandwidth_pd_gbps:
     pass: 180
     warn: 100
-    fail: 50
 ```
 
 ## Auto-Detection
@@ -171,10 +175,12 @@ Defined in `manifests/image-references/jobs.yaml`, embedded at build time:
 images:
   default: "ghcr.io/llm-d/llm-d-rdma-tools-dev:latest"
   jobs:
-    iperf3: ""   # uses default
+    iperf3: ""   # uses default (includes iperf3 + netperf)
     rdma: ""     # uses default
     nccl: ""     # uses default
 ```
+
+**NOTE:** The `iperf3` image must include both `iperf3` and `netperf` binaries. The netperf job uses the same image as iperf3.
 
 ## Report Storage
 

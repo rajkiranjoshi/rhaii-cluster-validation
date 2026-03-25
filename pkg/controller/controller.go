@@ -1418,7 +1418,7 @@ func (c *Controller) expandRDMAJobs(ctx context.Context, gpuNodes []string, topo
 		if hasAllDevices {
 			// Requesting all RDMA devices — create one PD job per GPU-NIC pair
 			for _, pair := range topo.Pairs {
-				rdmaJob := rdma.NewRDMABandwidthJob(c.cfg.Thresholds.RDMABandwidthPD.Pass, nil)
+				rdmaJob := rdma.NewRDMABandwidthJob(c.cfg.Thresholds.RDMABandwidthPD.Pass, c.cfg.Thresholds.RDMABandwidthPD.Warn, nil)
 				rdmaJob.PodCfg = origPodCfg
 				rdmaJob.ServerImage = origServerImg
 				rdmaJob.ClientImage = origClientImg
@@ -1441,7 +1441,7 @@ func (c *Controller) expandRDMAJobs(ctx context.Context, gpuNodes []string, topo
 			}
 		} else {
 			// Requesting fewer RDMA devices — single PD job, auto-detect device
-			rdmaJob := rdma.NewRDMABandwidthJob(c.cfg.Thresholds.RDMABandwidthPD.Pass, nil)
+			rdmaJob := rdma.NewRDMABandwidthJob(c.cfg.Thresholds.RDMABandwidthPD.Pass, c.cfg.Thresholds.RDMABandwidthPD.Warn, nil)
 			rdmaJob.PodCfg = origPodCfg
 			rdmaJob.ServerImage = origServerImg
 			rdmaJob.ClientImage = origClientImg
@@ -1458,7 +1458,7 @@ func (c *Controller) expandRDMAJobs(ctx context.Context, gpuNodes []string, topo
 
 		// Add WEP job if requesting all devices and multiple NICs available
 		if hasAllDevices && len(devices) > 1 {
-			wepJob := rdma.NewRDMAWEPJob(c.cfg.Thresholds.RDMABandwidthWEP.Pass, devices, gpuIDs)
+			wepJob := rdma.NewRDMAWEPJob(c.cfg.Thresholds.RDMABandwidthWEP.Pass, c.cfg.Thresholds.RDMABandwidthWEP.Warn, devices, gpuIDs)
 			wepJob.PodCfg = origPodCfg
 			wepJob.ServerImage = origServerImg
 			wepJob.ClientImage = origClientImg
@@ -1524,9 +1524,11 @@ func (c *Controller) configureJobs(ctx context.Context, gpuNodes []string) {
 		if tc, ok := job.(jobrunner.ThresholdConfigurable); ok {
 			switch job.Name() {
 			case "iperf3-tcp":
-				tc.SetThreshold(c.cfg.Thresholds.TCPBandwidth.Pass)
+				tc.SetThreshold(c.cfg.Thresholds.TCPBandwidth.Pass, c.cfg.Thresholds.TCPBandwidth.Warn)
+			case "netperf-tcp":
+				tc.SetThreshold(c.cfg.Thresholds.TCPLatency.Pass, c.cfg.Thresholds.TCPLatency.Warn)
 			case "ib-write-bw":
-				tc.SetThreshold(c.cfg.Thresholds.RDMABandwidthPD.Pass)
+				tc.SetThreshold(c.cfg.Thresholds.RDMABandwidthPD.Pass, c.cfg.Thresholds.RDMABandwidthPD.Warn)
 			}
 		}
 	}
@@ -1563,7 +1565,7 @@ func jobConfigKey(jobName string) string {
 		return "rdma"
 	}
 	switch jobName {
-	case "iperf3-tcp":
+	case "iperf3-tcp", "netperf-tcp":
 		return "iperf3"
 	case "nccl-allreduce":
 		return "nccl"

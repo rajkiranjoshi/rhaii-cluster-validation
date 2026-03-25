@@ -98,8 +98,9 @@ Requires 2+ GPU nodes. Each node is tested as both sender and receiver.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.CheckMode = CheckModeNetworking
 			return runDeploy(opts, func(ctrl *controller.Controller) {
-				ctrl.AddJob(networking.NewIperfJob(0, nil))
-				ctrl.AddJob(rdma.NewRDMABandwidthJob(0, nil))
+				ctrl.AddJob(networking.NewIperfJob(0, 0, nil))
+				ctrl.AddJob(networking.NewNetperfJob(0, 0, nil))
+				ctrl.AddJob(rdma.NewRDMABandwidthJob(0, 0, nil))
 			})
 		},
 	}
@@ -144,8 +145,9 @@ Requires 2+ GPU nodes. Uses stored report for GPU-NIC topology mapping.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.CheckMode = CheckModeNetBandwidth
 			return runDeploy(opts, func(ctrl *controller.Controller) {
-				ctrl.AddJob(networking.NewIperfJob(0, nil))
-				ctrl.AddJob(rdma.NewRDMABandwidthJob(0, nil))
+				ctrl.AddJob(networking.NewIperfJob(0, 0, nil))
+				ctrl.AddJob(networking.NewNetperfJob(0, 0, nil))
+				ctrl.AddJob(rdma.NewRDMABandwidthJob(0, 0, nil))
 			})
 		},
 	}
@@ -168,8 +170,9 @@ func newAllCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.CheckMode = CheckModeAll
 			return runDeploy(opts, func(ctrl *controller.Controller) {
-				ctrl.AddJob(networking.NewIperfJob(0, nil))
-				ctrl.AddJob(rdma.NewRDMABandwidthJob(0, nil))
+				ctrl.AddJob(networking.NewIperfJob(0, 0, nil))
+				ctrl.AddJob(networking.NewNetperfJob(0, 0, nil))
+				ctrl.AddJob(rdma.NewRDMABandwidthJob(0, 0, nil))
 			})
 		},
 	}
