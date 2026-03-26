@@ -338,15 +338,15 @@ func newRunCmd() *cobra.Command {
 			hasFailures := err == nil && runner.HasFailures(report)
 
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stdout, "Error: %v\n", err)
 				return err
 			}
 			if hasFailures {
-				fmt.Fprintf(os.Stderr, "Validation failed: one or more checks reported FAIL\n")
+				fmt.Fprintf(os.Stdout, "Validation failed: one or more checks reported FAIL\n")
 				return fmt.Errorf("validation failed: one or more checks reported FAIL")
 			}
 
-			fmt.Fprintf(os.Stderr, "Validation complete: all checks passed\n")
+			fmt.Fprintf(os.Stdout, "Validation complete: all checks passed\n")
 			return nil
 		},
 	}
