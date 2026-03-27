@@ -26,6 +26,8 @@ LABEL name="rhoai/odh-rhaii-cluster-validator-rhel9" \
 RUN dnf install -y \
       util-linux \
       pciutils \
+      infiniband-diags \
+      libibverbs-utils \
       && dnf clean all
 
 COPY --from=builder /opt/app-root/rhaii-validator /usr/local/bin/rhaii-validator
