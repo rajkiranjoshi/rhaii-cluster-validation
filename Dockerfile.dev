@@ -27,12 +27,11 @@ LABEL name="rhoai/odh-rhaii-cluster-validator-rhel9" \
 RUN dnf install -y \
       util-linux \
       pciutils \
+      infiniband-diags \
+      libibverbs-utils \
       && dnf clean all
 
 COPY --from=builder /opt/app-root/rhaii-validator /usr/local/bin/rhaii-validator
-
-# GPU/RDMA tools (nvidia-smi, ibstat, ibv_devices) run on the host via nsenter.
-# No need to install them in the container - privileged pod + nsenter handles it.
 
 # TODO: evaluate if non-root (USER 1001) is viable — topology checks and
 # ib_write_bw may require root for device access when running in 'run' mode.
