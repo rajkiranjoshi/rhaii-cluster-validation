@@ -296,9 +296,11 @@ func newRunCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:    "run",
-		Short:  "Run checks on current node (internal, used by check Jobs)",
-		Hidden: true,
+		Use:           "run",
+		Short:         "Run checks on current node (internal, used by check Jobs)",
+		Hidden:        true,
+		SilenceErrors: true,
+		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if nodeName == "" {
 				nodeName = os.Getenv("NODE_NAME")
@@ -353,20 +355,12 @@ func newRunCmd() *cobra.Command {
 			}
 
 			report, err := r.Run(ctx)
-			hasFailures := err == nil && runner.HasFailures(report)
-
-			os.Stdout.Sync()
-
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				return err
 			}
-			if hasFailures {
-				fmt.Fprintf(os.Stderr, "Validation failed: one or more checks reported FAIL\n")
+			if runner.HasFailures(report) {
 				return fmt.Errorf("validation failed: one or more checks reported FAIL")
 			}
-
-			fmt.Fprintf(os.Stderr, "Validation complete: all checks passed\n")
 			return nil
 		},
 	}

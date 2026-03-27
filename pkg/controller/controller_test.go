@@ -119,6 +119,20 @@ Waiting for controller to collect results...`,
 			wantNode: "aks-gpu-0",
 			wantLen:  1,
 		},
+		{
+			name:    "interleaved stderr inside JSON is not recoverable",
+			input: `{
+  "node": "gpu-node-1",
+  "results": [
+    {
+      "status": "PASS",
+    Validation complete: all checks passed
+      "message": "ok"
+    }
+  ]
+}`,
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

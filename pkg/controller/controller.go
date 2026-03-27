@@ -1181,13 +1181,17 @@ func parseReport(r io.Reader) (*checks.NodeReport, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
 
-	// Skip stderr lines until we find the start of JSON
+	// Skip stderr progress lines until we find the opening "{" of the JSON report.
+	// The agent writes JSON to stdout and progress to stderr, but container runtimes
+	// (CRI-O, containerd) merge both streams in kubectl logs. We rely on the agent
+	// NOT writing to stderr after the JSON (see cmd/agent SilenceErrors) so that
+	// json.Decoder can parse the object cleanly. Any trailing stderr text after the
+	// closing "}" is ignored by json.Decoder.
 	var jsonLines []string
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "{") {
 			jsonLines = append(jsonLines, line)
-			// Collect remaining lines (json.Decoder will stop at the right place)
 			for scanner.Scan() {
 				jsonLines = append(jsonLines, scanner.Text())
 			}
