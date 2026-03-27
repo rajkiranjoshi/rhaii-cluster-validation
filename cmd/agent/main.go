@@ -57,6 +57,8 @@ func main() {
 
 	// Internal: agent mode (used by DaemonSet pods, not user-facing)
 	rootCmd.AddCommand(newRunCmd())
+	rootCmd.AddCommand(newTCPLatServerCmd())
+	rootCmd.AddCommand(newTCPLatClientCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -99,7 +101,7 @@ Requires 2+ GPU nodes. Each node is tested as both sender and receiver.`,
 			opts.CheckMode = CheckModeNetworking
 			return runDeploy(opts, func(ctrl *controller.Controller) {
 				ctrl.AddJob(networking.NewIperfJob(0, 0, nil))
-				ctrl.AddJob(networking.NewNetperfJob(0, 0, nil))
+				ctrl.AddJob(networking.NewTCPLatencyJob(0, 0, nil))
 				ctrl.AddJob(rdma.NewRDMABandwidthJob(0, 0, nil))
 			})
 		},
@@ -146,7 +148,7 @@ Requires 2+ GPU nodes. Uses stored report for GPU-NIC topology mapping.`,
 			opts.CheckMode = CheckModeNetBandwidth
 			return runDeploy(opts, func(ctrl *controller.Controller) {
 				ctrl.AddJob(networking.NewIperfJob(0, 0, nil))
-				ctrl.AddJob(networking.NewNetperfJob(0, 0, nil))
+				ctrl.AddJob(networking.NewTCPLatencyJob(0, 0, nil))
 				ctrl.AddJob(rdma.NewRDMABandwidthJob(0, 0, nil))
 			})
 		},
@@ -171,7 +173,7 @@ func newAllCmd() *cobra.Command {
 			opts.CheckMode = CheckModeAll
 			return runDeploy(opts, func(ctrl *controller.Controller) {
 				ctrl.AddJob(networking.NewIperfJob(0, 0, nil))
-				ctrl.AddJob(networking.NewNetperfJob(0, 0, nil))
+				ctrl.AddJob(networking.NewTCPLatencyJob(0, 0, nil))
 				ctrl.AddJob(rdma.NewRDMABandwidthJob(0, 0, nil))
 			})
 		},

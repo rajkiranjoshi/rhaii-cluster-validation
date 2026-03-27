@@ -1529,7 +1529,7 @@ func (c *Controller) configureJobs(ctx context.Context, gpuNodes []string) {
 			switch job.Name() {
 			case "iperf3-tcp":
 				tc.SetThreshold(c.cfg.Thresholds.TCPBandwidth.Pass, c.cfg.Thresholds.TCPBandwidth.Warn)
-			case "netperf-tcp":
+			case "tcp-latency":
 				tc.SetThreshold(c.cfg.Thresholds.TCPLatency.Pass, c.cfg.Thresholds.TCPLatency.Warn)
 			case "ib-write-bw":
 				tc.SetThreshold(c.cfg.Thresholds.RDMABandwidthPD.Pass, c.cfg.Thresholds.RDMABandwidthPD.Warn)
@@ -1540,14 +1540,22 @@ func (c *Controller) configureJobs(ctx context.Context, gpuNodes []string) {
 	// Container images from image config
 	for _, job := range c.jobs {
 		if imgConfig, ok := job.(jobrunner.ImageConfigurable); ok {
-			configKey := jobConfigKey(job.Name())
-			if configKey == "" {
-				continue
+			var jobImage string
+
+			// Special case: tcp-latency uses validator image (has built-in tcp-lat tool)
+			if job.Name() == "tcp-latency" {
+				jobImage = c.opts.Image
+			} else {
+				configKey := jobConfigKey(job.Name())
+				if configKey == "" {
+					continue
+				}
+				jobImage = c.cfg.Images.GetJobImage(configKey)
+				if jobImage == "" {
+					continue
+				}
 			}
-			jobImage := c.cfg.Images.GetJobImage(configKey)
-			if jobImage == "" {
-				continue
-			}
+
 			if imgConfig.GetServerImage() == "" {
 				if setter, ok := job.(interface{ SetServerImage(string) }); ok {
 					setter.SetServerImage(jobImage)
@@ -1569,8 +1577,10 @@ func jobConfigKey(jobName string) string {
 		return "rdma"
 	}
 	switch jobName {
-	case "iperf3-tcp", "netperf-tcp":
+	case "iperf3-tcp":
 		return "iperf3"
+	case "tcp-latency":
+		return "" // Uses validator image (built-in tcp-lat tool)
 	case "nccl-allreduce":
 		return "nccl"
 	default:

@@ -13,7 +13,7 @@ kubectl plugin for validating GPU cluster readiness for AI/ML workloads. Checks 
 
 ```bash
 kubectl rhaii-validate gpu            # GPU hardware checks (driver, ECC)
-kubectl rhaii-validate networking     # Network tests (iperf3, netperf, RDMA)
+kubectl rhaii-validate networking     # Network tests (iperf3, TCP latency, RDMA)
 kubectl rhaii-validate all            # Everything
 kubectl rhaii-validate deps           # Check operators/CRDs (future)
 kubectl rhaii-validate clean          # Remove all validation resources
@@ -47,11 +47,11 @@ kubectl rhaii-validate all
     +-- Collects JSON results from pod logs
     |
     +-- Multi-node network test jobs (ring topology):
-    |       +-- iperf3: TCP bandwidth per node pair
-    |       +-- netperf: TCP latency (TCP_RR) per node pair
-    |       +-- ib_write_bw: RDMA per GPU-NIC pair (from topology)
+    |       +-- iperf3: TCP bandwidth per node pair (tools image)
+    |       +-- tcp-lat: TCP latency per node pair (validator image, built-in)
+    |       +-- ib_write_bw: RDMA per GPU-NIC pair (from topology, tools image)
     |       +-- RDMA skipped if no RDMA resource configured
-    |       +-- Jobs use image from manifests/image-references/jobs.yaml
+    |       +-- Jobs use images: tools for iperf3/RDMA, validator for tcp-lat
     |
     +-- Stores JSON report in ConfigMap (persists after cleanup)
     +-- Prints table report with topology
@@ -63,11 +63,11 @@ kubectl rhaii-validate all
 | | DaemonSet (per-node) | Jobs (multi-node) |
 |---|---|---|
 | Purpose | Hardware checks | Network tests (bandwidth + latency) |
-| Image | rhaii-validator (your build) | llm-d-rdma-tools-dev (from jobs.yaml) |
+| Image | rhaii-validator | tools (iperf3/RDMA), validator (tcp-lat) |
 | GPU request | None (privileged + chroot) | 1 per pod (auto-detected) |
 | Host access | chroot /host | None (self-contained image) |
 | Checks | `gpu` or `all` mode | `networking` or `all` mode |
-| Tools | nvidia-smi, rocm-smi, ibv_devices | iperf3, netperf, ib_write_bw |
+| Tools | nvidia-smi, rocm-smi, ibv_devices | iperf3, ib_write_bw, tcp-lat (built-in) |
 
 ## Project Structure
 
@@ -88,8 +88,8 @@ rhaii-cluster-validation/
 │   │   │   ├── status.go          # RDMA NIC status (ibstat/sysfs)
 │   │   │   └── rdmabw_job.go      # ib_write_bw job (-d device --use_cuda gpu)
 │   │   └── networking/
-│   │       ├── iperf_job.go       # iperf3 TCP bandwidth job
-│   │       └── netperf_job.go     # netperf TCP latency job (TCP_RR)
+│   │       ├── iperf_job.go       # iperf3 TCP bandwidth job (tools image)
+│   │       └── tcplat_job.go      # TCP latency job (uses built-in tcp-lat tool)
 │   ├── config/
 │   │   ├── platform.go            # PlatformConfig, GPUVendor, ResourceConfig
 │   │   ├── detect.go              # Platform auto-detection (all nodes scanned)
@@ -175,12 +175,12 @@ Defined in `manifests/image-references/jobs.yaml`, embedded at build time:
 images:
   default: "ghcr.io/llm-d/llm-d-rdma-tools-dev:latest"
   jobs:
-    iperf3: ""   # uses default (includes iperf3 + netperf)
+    iperf3: ""   # uses default (includes iperf3)
     rdma: ""     # uses default
     nccl: ""     # uses default
 ```
 
-**NOTE:** The `iperf3` image must include both `iperf3` and `netperf` binaries. The netperf job uses the same image as iperf3.
+**NOTE:** The `iperf3` image is used for iperf3 jobs. The TCP latency test uses the validator image with built-in `tcp-lat` tool (no external dependencies).
 
 ## Report Storage
 

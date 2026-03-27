@@ -53,14 +53,11 @@ USER root
 
 WORKDIR /root
 
-# Enable EPEL repository
-RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && dnf clean all
-
-# Install runtime utilities (including netperf from EPEL)
+# Install runtime utilities
 RUN dnf install -y \
     wget procps-ng jq bc iputils ethtool net-tools \
     numactl kmod systemd-udev libpcap python3 hostname \
-    iperf3 netperf tcpdump pciutils \
+    iperf3 tcpdump pciutils \
     && dnf clean all
 
 # Install RDMA libraries (matches what perftest was compiled against)
