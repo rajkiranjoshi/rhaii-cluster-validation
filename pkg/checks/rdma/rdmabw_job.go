@@ -19,26 +19,28 @@ const (
 
 // RDMABandwidthJob implements the Job interface for RDMA bandwidth testing via ib_write_bw.
 type RDMABandwidthJob struct {
-	Duration    int                  // test duration in seconds (default 10)
-	Threshold   float64              // Gbps pass threshold
-	PodCfg      *jobrunner.PodConfig // optional pod configuration
-	ServerImage string               // optional custom server image (empty = use default)
-	ClientImage string               // optional custom client image (empty = use default)
-	Device      string               // RDMA device (e.g., "mlx5_0"), empty = auto
-	UseCUDA     int                  // GPU ID for GPUDirect RDMA (-1 = disabled)
-	QPs         int                  // number of queue pairs (default 4)
-	MessageSize int                  // message size in bytes (default 1048576 = 1 MiB)
+	Duration      int                  // test duration in seconds (default 10)
+	PassThreshold float64              // Gbps pass threshold
+	WarnThreshold float64              // Gbps warn threshold
+	PodCfg        *jobrunner.PodConfig // optional pod configuration
+	ServerImage   string               // optional custom server image (empty = use default)
+	ClientImage   string               // optional custom client image (empty = use default)
+	Device        string               // RDMA device (e.g., "mlx5_0"), empty = auto
+	UseCUDA       int                  // GPU ID for GPUDirect RDMA (-1 = disabled)
+	QPs           int                  // number of queue pairs (default 4)
+	MessageSize   int                  // message size in bytes (default 1048576 = 1 MiB)
 }
 
 // NewRDMABandwidthJob creates an RDMA bandwidth job.
-func NewRDMABandwidthJob(threshold float64, podCfg *jobrunner.PodConfig) *RDMABandwidthJob {
+func NewRDMABandwidthJob(pass, warn float64, podCfg *jobrunner.PodConfig) *RDMABandwidthJob {
 	return &RDMABandwidthJob{
-		Duration:    10,
-		Threshold:   threshold,
-		PodCfg:      podCfg,
-		UseCUDA:     -1,
-		QPs:         DefaultRDMAQPs,
-		MessageSize: DefaultRDMAMessageSize,
+		Duration:      10,
+		PassThreshold: pass,
+		WarnThreshold: warn,
+		PodCfg:        podCfg,
+		UseCUDA:       -1,
+		QPs:           DefaultRDMAQPs,
+		MessageSize:   DefaultRDMAMessageSize,
 	}
 }
 
@@ -77,7 +79,10 @@ func (j *RDMABandwidthJob) SetPodConfig(cfg *jobrunner.PodConfig) {
 	cfg.Privileged = true
 	j.PodCfg = cfg
 }
-func (j *RDMABandwidthJob) SetThreshold(t float64)               { j.Threshold = t }
+func (j *RDMABandwidthJob) SetThreshold(pass, warn float64) {
+	j.PassThreshold = pass
+	j.WarnThreshold = warn
+}
 
 // Implement ImageConfigurable interface
 func (j *RDMABandwidthJob) GetServerImage() string { return j.ServerImage }
@@ -128,15 +133,15 @@ func (j *RDMABandwidthJob) ParseResult(logs string) (*jobrunner.JobResult, error
 	}
 
 	switch {
-	case gbps >= j.Threshold:
+	case gbps >= j.PassThreshold:
 		r.Status = checks.StatusPass
-		r.Message = fmt.Sprintf("RDMA bandwidth: %.1f Gbps (threshold: %.0f Gbps)", gbps, j.Threshold)
-	case gbps >= j.Threshold*0.4:
+		r.Message = fmt.Sprintf("RDMA bandwidth: %.1f Gbps (>= %.0f Gbps pass threshold)", gbps, j.PassThreshold)
+	case gbps >= j.WarnThreshold:
 		r.Status = checks.StatusWarn
-		r.Message = fmt.Sprintf("RDMA bandwidth: %.1f Gbps (below %.0f Gbps threshold)", gbps, j.Threshold)
+		r.Message = fmt.Sprintf("RDMA bandwidth: %.1f Gbps (>= %.0f Gbps warn, < %.0f Gbps pass)", gbps, j.WarnThreshold, j.PassThreshold)
 	default:
 		r.Status = checks.StatusFail
-		r.Message = fmt.Sprintf("RDMA bandwidth: %.1f Gbps (well below %.0f Gbps threshold)", gbps, j.Threshold)
+		r.Message = fmt.Sprintf("RDMA bandwidth: %.1f Gbps (< %.0f Gbps warn threshold)", gbps, j.WarnThreshold)
 	}
 
 	return r, nil

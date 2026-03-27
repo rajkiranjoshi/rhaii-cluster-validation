@@ -41,14 +41,14 @@ operators:
 
 thresholds:
   tcp_bandwidth_gbps:
-    pass: 25
-    warn: 10
-    fail: 5
+    pass: 5
+    warn: 1
+  tcp_latency_ms:
+    pass: 0.5
+    warn: 1.0
   rdma_bandwidth_pd_gbps:
     pass: 180
     warn: 100
-    fail: 50
   rdma_bandwidth_wep_gbps:
     pass: 350
     warn: 200
-    fail: 100

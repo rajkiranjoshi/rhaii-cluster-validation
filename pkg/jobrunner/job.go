@@ -67,9 +67,9 @@ func (pc *PodConfig) ToResourceRequirements() (corev1.ResourceRequirements, erro
 	return reqs, nil
 }
 
-// ThresholdConfigurable is an optional interface for jobs that accept a threshold.
+// ThresholdConfigurable is an optional interface for jobs that accept pass/warn thresholds.
 type ThresholdConfigurable interface {
-	SetThreshold(float64)
+	SetThreshold(pass, warn float64)
 }
 
 // Configurable is an optional interface for jobs that accept a PodConfig.

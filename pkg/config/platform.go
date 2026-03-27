@@ -86,6 +86,23 @@ func (c PlatformConfig) Validate() error {
 	if c.Jobs.RDMA.MessageSize < 0 {
 		return fmt.Errorf("invalid jobs.rdma.message_size %d: must be >= 0", c.Jobs.RDMA.MessageSize)
 	}
+
+	// Validate bandwidth thresholds (higher is better: Pass > Warn)
+	if c.Thresholds.TCPBandwidth.Pass <= c.Thresholds.TCPBandwidth.Warn {
+		return fmt.Errorf("invalid tcp_bandwidth_gbps thresholds: pass (%.1f) must be > warn (%.1f)", c.Thresholds.TCPBandwidth.Pass, c.Thresholds.TCPBandwidth.Warn)
+	}
+	if c.Thresholds.RDMABandwidthPD.Pass <= c.Thresholds.RDMABandwidthPD.Warn {
+		return fmt.Errorf("invalid rdma_bandwidth_pd_gbps thresholds: pass (%.1f) must be > warn (%.1f)", c.Thresholds.RDMABandwidthPD.Pass, c.Thresholds.RDMABandwidthPD.Warn)
+	}
+	if c.Thresholds.RDMABandwidthWEP.Pass <= c.Thresholds.RDMABandwidthWEP.Warn {
+		return fmt.Errorf("invalid rdma_bandwidth_wep_gbps thresholds: pass (%.1f) must be > warn (%.1f)", c.Thresholds.RDMABandwidthWEP.Pass, c.Thresholds.RDMABandwidthWEP.Warn)
+	}
+
+	// Validate latency thresholds (lower is better: Pass < Warn)
+	if c.Thresholds.TCPLatency.Pass >= c.Thresholds.TCPLatency.Warn {
+		return fmt.Errorf("invalid tcp_latency_ms thresholds: pass (%.2f) must be < warn (%.2f)", c.Thresholds.TCPLatency.Pass, c.Thresholds.TCPLatency.Warn)
+	}
+
 	return nil
 }
 
@@ -108,15 +125,23 @@ type GPUConfig struct {
 // ThresholdConfig holds network performance thresholds.
 type ThresholdConfig struct {
 	TCPBandwidth     BandwidthThreshold `yaml:"tcp_bandwidth_gbps" json:"tcp_bandwidth_gbps"`
+	TCPLatency       LatencyThreshold   `yaml:"tcp_latency_ms" json:"tcp_latency_ms"`
 	RDMABandwidthPD  BandwidthThreshold `yaml:"rdma_bandwidth_pd_gbps" json:"rdma_bandwidth_pd_gbps"`
 	RDMABandwidthWEP BandwidthThreshold `yaml:"rdma_bandwidth_wep_gbps" json:"rdma_bandwidth_wep_gbps"`
 }
 
-// BandwidthThreshold defines pass/warn/fail thresholds for bandwidth.
+// BandwidthThreshold defines pass/warn thresholds for bandwidth (higher is better).
+// >= Pass = PASS, >= Warn = WARN, < Warn = FAIL
 type BandwidthThreshold struct {
 	Pass float64 `yaml:"pass" json:"pass"`
 	Warn float64 `yaml:"warn" json:"warn"`
-	Fail float64 `yaml:"fail" json:"fail"`
+}
+
+// LatencyThreshold defines pass/warn thresholds for latency (lower is better).
+// <= Pass = PASS, <= Warn = WARN, > Warn = FAIL
+type LatencyThreshold struct {
+	Pass float64 `yaml:"pass" json:"pass"`
+	Warn float64 `yaml:"warn" json:"warn"`
 }
 
 

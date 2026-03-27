@@ -10,22 +10,23 @@ import (
 func TestIperfJobParseResult(t *testing.T) {
 	tests := []struct {
 		name       string
-		threshold  float64
+		pass       float64
+		warn       float64
 		bps        float64
 		wantStatus checks.Status
 	}{
-		{"above threshold", 25.0, 30e9, checks.StatusPass},
-		{"at threshold", 25.0, 25e9, checks.StatusPass},
-		{"warn range", 25.0, 15e9, checks.StatusWarn},  // 60% of 25 = above 40%
-		{"at 40%", 25.0, 10e9, checks.StatusWarn},       // exactly 40%
-		{"below 40%", 25.0, 9e9, checks.StatusFail},
-		{"zero bandwidth", 25.0, 0, checks.StatusFail},
-		{"high bandwidth", 100.0, 200e9, checks.StatusPass},
+		{"above pass", 5.0, 1.0, 10e9, checks.StatusPass},      // 10 Gbps >= 5 pass
+		{"at pass", 5.0, 1.0, 5e9, checks.StatusPass},          // 5 Gbps >= 5 pass
+		{"warn range", 5.0, 1.0, 3e9, checks.StatusWarn},       // 3 Gbps >= 1 warn, < 5 pass
+		{"at warn", 5.0, 1.0, 1e9, checks.StatusWarn},          // 1 Gbps >= 1 warn
+		{"below warn", 5.0, 1.0, 0.5e9, checks.StatusFail},     // 0.5 Gbps < 1 warn
+		{"zero bandwidth", 5.0, 1.0, 0, checks.StatusFail},
+		{"high bandwidth", 100.0, 10.0, 200e9, checks.StatusPass},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			job := NewIperfJob(tt.threshold, nil)
+			job := NewIperfJob(tt.pass, tt.warn, nil)
 			json := `{"end":{"sum_sent":{"bits_per_second":` +
 				formatFloat(tt.bps) + `,"retransmits":0}}}`
 
@@ -41,7 +42,7 @@ func TestIperfJobParseResult(t *testing.T) {
 }
 
 func TestIperfJobParseResultInvalid(t *testing.T) {
-	job := NewIperfJob(25.0, nil)
+	job := NewIperfJob(5.0, 1.0, nil)
 	tests := []struct {
 		name  string
 		input string
