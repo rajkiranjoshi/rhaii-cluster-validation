@@ -33,9 +33,9 @@ func (c *StatusCheck) Run(ctx context.Context) checks.Result {
 		Name:     c.Name(),
 	}
 
-	// Check if any device is actually RDMA-capable before running ibstat.
-	// SR-IOV VFs appear in /sys/class/infiniband but have no GIDs.
-	entries, err := os.ReadDir("/sys/class/infiniband")
+	// Enumerate verbs devices using the same logic as DevicesCheck, then
+	// check if any are genuinely RDMA-capable before running ibstat.
+	verbsDevices, err := listVerbsDevices(ctx)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			r.Status = checks.StatusSkip
@@ -43,12 +43,12 @@ func (c *StatusCheck) Run(ctx context.Context) checks.Result {
 			return r
 		}
 		r.Status = checks.StatusFail
-		r.Message = fmt.Sprintf("failed to read /sys/class/infiniband: %v", err)
+		r.Message = fmt.Sprintf("Failed to enumerate RDMA devices: %v", err)
 		return r
 	}
 	hasRDMA := false
-	for _, entry := range entries {
-		if entry.IsDir() && hasRDMACapability(ctx, entry.Name()) {
+	for _, dev := range verbsDevices {
+		if hasRDMACapability(ctx, dev) {
 			hasRDMA = true
 			break
 		}

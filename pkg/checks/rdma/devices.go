@@ -2,6 +2,7 @@ package rdma
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,30 @@ import (
 
 	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/checks"
 )
+
+// listVerbsDevices returns all InfiniBand verbs device names visible to
+// the container. It tries ibv_devices first, falling back to reading
+// /sys/class/infiniband entries. Returns os.ErrNotExist when the sysfs
+// directory is absent (no RDMA subsystem at all).
+func listVerbsDevices(ctx context.Context) ([]string, error) {
+	output, err := exec.CommandContext(ctx, "ibv_devices").Output()
+	if err == nil {
+		return parseIBVDevices(string(output)), nil
+	}
+
+	entries, sysErr := os.ReadDir("/sys/class/infiniband")
+	if sysErr != nil {
+		if errors.Is(sysErr, os.ErrNotExist) {
+			return nil, sysErr
+		}
+		return nil, fmt.Errorf("ibv_devices failed: %v; sysfs fallback also failed: %v", err, sysErr)
+	}
+	var devices []string
+	for _, e := range entries {
+		devices = append(devices, e.Name())
+	}
+	return devices, nil
+}
 
 // DevicesCheck validates RDMA device presence and accessibility.
 type DevicesCheck struct {
@@ -37,23 +62,12 @@ func (c *DevicesCheck) Run(ctx context.Context) checks.Result {
 		return r
 	}
 
-	output, err := exec.CommandContext(ctx, "ibv_devices").Output()
-	var verbsDevices []string
+	verbsDevices, err := listVerbsDevices(ctx)
 	if err != nil {
-		entries, sysErr := os.ReadDir("/sys/class/infiniband")
-		if sysErr != nil {
-			r.Status = checks.StatusFail
-			r.Message = fmt.Sprintf("ibv_devices failed: %v; sysfs fallback also failed", err)
-			r.Remediation = "Check RDMA device plugin and network operator installation"
-			return r
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				verbsDevices = append(verbsDevices, e.Name())
-			}
-		}
-	} else {
-		verbsDevices = parseIBVDevices(string(output))
+		r.Status = checks.StatusFail
+		r.Message = fmt.Sprintf("Failed to enumerate RDMA devices: %v", err)
+		r.Remediation = "Check RDMA device plugin and network operator installation"
+		return r
 	}
 	if len(verbsDevices) == 0 {
 		r.Status = checks.StatusFail
@@ -81,7 +95,7 @@ func (c *DevicesCheck) Run(ctx context.Context) checks.Result {
 		r.Status = checks.StatusPass
 		r.Message = fmt.Sprintf("%d RDMA-capable device(s): %s", len(rdmaCapable), strings.Join(rdmaCapable, ", "))
 		if len(verbsOnly) > 0 {
-			r.Message += fmt.Sprintf(" (%d verbs-only: %s)", len(verbsOnly), strings.Join(verbsOnly, ", "))
+			r.Message += fmt.Sprintf(" (%d other verbs devices: %s)", len(verbsOnly), strings.Join(verbsOnly, ", "))
 		}
 	} else {
 		r.Status = checks.StatusWarn
