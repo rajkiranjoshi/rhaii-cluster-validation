@@ -4,29 +4,22 @@ kubectl plugin for validating GPU cluster readiness for AI/ML workloads.
 
 ## Quick Start
 
-### Option 1: kubectl Plugin (Recommended)
+### Option 1: Download Binary (No Build Required)
 
 ```bash
-# Build and install
-make install
+# Extract kubectl plugin from published container image
+docker run --rm --entrypoint cat ghcr.io/opendatahub-io/rhaii-cluster-validation/odh-rhaii-cluster-validator:latest \
+  /usr/local/bin/rhaii-validator > kubectl-rhaii_validate
+chmod +x kubectl-rhaii_validate
+sudo mv kubectl-rhaii_validate /usr/local/bin/
 
-# Run GPU checks
-kubectl rhaii-validate gpu
-
-# Run bandwidth tests
-kubectl rhaii-validate networking
-
-# Run everything
-kubectl rhaii-validate all
-
-# Debug mode (keeps pods alive for inspection)
-kubectl rhaii-validate gpu --debug
-
-# JSON output
-kubectl rhaii-validate gpu -o json
-
-# Cleanup
-kubectl rhaii-validate clean
+# Run
+kubectl rhaii-validate gpu            # GPU hardware checks
+kubectl rhaii-validate networking     # Network bandwidth tests
+kubectl rhaii-validate all            # Everything
+kubectl rhaii-validate all --debug    # Keep pods alive for inspection
+kubectl rhaii-validate all -o json    # JSON output
+kubectl rhaii-validate clean          # Cleanup
 ```
 
 ### Option 2: Container Image (No Install)
@@ -34,53 +27,37 @@ kubectl rhaii-validate clean
 ```bash
 IMG=ghcr.io/opendatahub-io/rhaii-cluster-validation/odh-rhaii-cluster-validator:latest
 
-# Run GPU checks
-podman run --rm -it \
-  -v ~/.kube/config:/kubeconfig:z \
-  -e KUBECONFIG=/kubeconfig \
-  $IMG gpu
-
-# Run bandwidth tests
-podman run --rm -it \
-  -v ~/.kube/config:/kubeconfig:z \
-  -e KUBECONFIG=/kubeconfig \
-  $IMG networking
-
-# Run everything
 podman run --rm -it \
   -v ~/.kube/config:/kubeconfig:z \
   -e KUBECONFIG=/kubeconfig \
   $IMG all
 
-# Cleanup
 podman run --rm -it \
   -v ~/.kube/config:/kubeconfig:z \
   -e KUBECONFIG=/kubeconfig \
   $IMG clean
 ```
 
-### Option 3: Download Binary
+### Option 3: Build from Source
 
 ```bash
-# Download latest release
-curl -L https://github.com/opendatahub-io/rhaii-cluster-validation/releases/latest/download/kubectl-rhaii_validate-linux-amd64 -o kubectl-rhaii_validate
-chmod +x kubectl-rhaii_validate
-sudo mv kubectl-rhaii_validate /usr/local/bin/
-
-# Run
+make install
 kubectl rhaii-validate all
 ```
 
-## Build and Push
+## Development
 
 ```bash
-# Build and push container image
-make container
-make push
-
-# Build binary + install kubectl plugin + run validation
-make deploy
+make build              # Build binary
+make test               # Run unit tests
+make lint               # Run linter
+make install            # Build + install as kubectl plugin
+make container          # Build validator container image
+make container-rdma     # Build tools container image
+make run-local          # Run checks locally (requires GPU node)
 ```
+
+Container images are automatically built and pushed to GHCR on merge to `main`.
 
 ## How Each Check Works
 
