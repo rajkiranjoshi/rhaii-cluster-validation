@@ -24,14 +24,15 @@ TARGET_PLATFORM ?= linux/amd64
 help:
 	@echo "rhaii-cluster-validation - GPU/RDMA cluster validation"
 	@echo ""
-	@echo "Quick Start (no build required):"
-	@echo "  make download       - Download and install kubectl plugin from GHCR"
+	@echo "Quick Start:"
+	@echo "  make download       - Download and install kubectl plugin from GHCR (Linux only)"
+	@echo "  make install        - Build and install from source (Linux and macOS)"
 	@echo "  kubectl rhaii-validate all          # Run all checks"
 	@echo "  kubectl rhaii-validate gpu          # GPU checks only"
 	@echo "  kubectl rhaii-validate networking   # Network tests only"
 	@echo "  kubectl rhaii-validate clean        # Cleanup"
 	@echo ""
-	@echo "  Or run directly via container:"
+	@echo "  Or run directly via container (Linux and macOS):"
 	@echo "    podman run --rm -it -v ~/.kube/config:/kubeconfig:z -e KUBECONFIG=/kubeconfig $(IMG) all"
 	@echo ""
 	@echo "Development:"
@@ -49,6 +50,12 @@ help:
 	@echo "  make clean-all      - Remove everything including report"
 
 download:
+	@# Container images contain Linux binaries — cannot run on macOS directly
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		echo "ERROR: 'make download' extracts a Linux binary from the container image."; \
+		echo "       On macOS, use 'make install' to build from source instead."; \
+		exit 1; \
+	fi
 	@# Check for existing installs that could shadow the new one
 	@EXISTING=$$(which kubectl-rhaii_validate 2>/dev/null); \
 	if [ -n "$$EXISTING" ]; then \
