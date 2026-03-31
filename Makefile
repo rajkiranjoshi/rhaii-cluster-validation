@@ -1,4 +1,4 @@
-.PHONY: build test container push deploy deploy-all install uninstall logs clean clean-all help
+.PHONY: build test container container-rdma push push-rdma download install uninstall deploy deploy-all logs clean clean-all run-local fmt lint help
 
 IMG ?= ghcr.io/opendatahub-io/rhaii-cluster-validation/odh-rhaii-cluster-validator:latest
 export IMG
@@ -22,35 +22,62 @@ CONTAINER_RUNTIME ?= $(shell \
 TARGET_PLATFORM ?= linux/amd64
 
 help:
-	@echo "rhaii-cluster-validation - GPU/RDMA validation agent"
+	@echo "rhaii-cluster-validation - GPU/RDMA cluster validation"
 	@echo ""
-	@echo "Build:"
-	@echo "  make build          - Build agent binary"
+	@echo "Quick Start (no build required):"
+	@echo "  make download       - Download and install kubectl plugin from GHCR"
+	@echo "  kubectl rhaii-validate all          # Run all checks"
+	@echo "  kubectl rhaii-validate gpu          # GPU checks only"
+	@echo "  kubectl rhaii-validate networking   # Network tests only"
+	@echo "  kubectl rhaii-validate clean        # Cleanup"
+	@echo ""
+	@echo "  Or run directly via container:"
+	@echo "    podman run --rm -it -v ~/.kube/config:/kubeconfig:z -e KUBECONFIG=/kubeconfig $(IMG) all"
+	@echo ""
+	@echo "Development:"
+	@echo "  make build          - Build binary"
 	@echo "  make test           - Run unit tests"
-	@echo "  make container      - Build container image (linux/amd64)"
-	@echo "  make push           - Push container image"
-	@echo "  make install        - Install as kubectl plugin (kubectl rhaii-validate)"
+	@echo "  make lint           - Run linter"
+	@echo "  make install        - Build + install as kubectl plugin"
 	@echo "  make uninstall      - Remove kubectl plugin"
+	@echo "  make container      - Build validator container image"
+	@echo "  make container-rdma - Build tools container image"
+	@echo "  make run-local      - Run checks locally (requires GPU node)"
 	@echo ""
-	@echo "Deploy:"
-	@echo "  make deploy         - Deploy using existing image (IMG=...)"
-	@echo "  make deploy-all     - Build + push + deploy (IMG=...)"
-	@echo "  make logs           - Collect check job results from pod logs"
-	@echo "  make clean          - Remove check jobs, bandwidth jobs, and RBAC"
-	@echo "  make clean-all      - Remove all resources including ConfigMap"
-	@echo ""
-	@echo "CLI Testing:"
-	@echo "  make run-local      - Run agent locally (requires GPU node)"
+	@echo "Cleanup:"
+	@echo "  make clean          - Remove validation resources (keep report)"
+	@echo "  make clean-all      - Remove everything including report"
+
+download:
+	@# Check for existing installs that could shadow the new one
+	@EXISTING=$$(which kubectl-rhaii_validate 2>/dev/null); \
+	if [ -n "$$EXISTING" ]; then \
+		echo "WARNING: existing plugin found at $$EXISTING — removing it first"; \
+		sudo rm -f "$$EXISTING"; \
+	fi
+	@echo "Downloading kubectl plugin from container image..."
+	$(CONTAINER_RUNTIME) pull $(IMG)
+	$(CONTAINER_RUNTIME) run --rm --entrypoint cat $(IMG) /usr/local/bin/rhaii-validator > kubectl-rhaii_validate
+	chmod +x kubectl-rhaii_validate
+	sudo mv kubectl-rhaii_validate /usr/local/bin/
+	@echo "Installed! Run: kubectl rhaii-validate all"
+	@kubectl rhaii-validate --version
 
 build:
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/rhaii-validator ./cmd/agent/
 
 install: build
+	@# Check for existing installs that could shadow the new one
+	@EXISTING=$$(which kubectl-rhaii_validate 2>/dev/null); \
+	if [ -n "$$EXISTING" ]; then \
+		echo "WARNING: existing plugin found at $$EXISTING — removing it first"; \
+		sudo rm -f "$$EXISTING"; \
+	fi
 	@echo "Installing kubectl plugin..."
 	cp bin/rhaii-validator /usr/local/bin/kubectl-rhaii_validate 2>/dev/null || \
 		cp bin/rhaii-validator $(HOME)/.local/bin/kubectl-rhaii_validate
-	@echo "Installed! Usage: kubectl rhaii-validate deploy --image $(IMG)"
-	@echo "Verify:  kubectl plugin list | grep rhaii"
+	@echo "Installed! Run: kubectl rhaii-validate all"
+	@kubectl rhaii-validate --version
 
 uninstall:
 	rm -f /usr/local/bin/kubectl-rhaii_validate $(HOME)/.local/bin/kubectl-rhaii_validate

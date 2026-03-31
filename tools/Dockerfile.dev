@@ -46,7 +46,9 @@ LABEL name="rhoai/odh-rhaii-validator-tools-rhel9" \
       description="RDMA and network bandwidth testing tools (iperf3, perftest) with CUDA support for preflight validation of xKS clusters before AI workload deployment" \
       maintainer="Red Hat LLM-D Team" \
       io.k8s.display-name="RHAII Validator Tools" \
-      io.k8s.description="RDMA and network bandwidth testing tools (iperf3, perftest) with CUDA support for preflight validation of xKS clusters before AI workload deployment"
+      io.k8s.description="RDMA and network bandwidth testing tools (iperf3, perftest) with CUDA support for preflight validation of xKS clusters before AI workload deployment" \
+      org.opencontainers.image.description="RDMA and network bandwidth testing tools (iperf3, perftest) with CUDA support for preflight validation of xKS clusters before AI workload deployment" \
+      org.opencontainers.image.source="https://github.com/opendatahub-io/rhaii-cluster-validation"
 
 # Root required: RDMA perftest (ib_write_bw, ib_read_bw) and GPU bandwidth tools
 # need direct access to InfiniBand/RoCE devices and CUDA runtime.

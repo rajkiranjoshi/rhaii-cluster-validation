@@ -20,7 +20,9 @@ LABEL name="rhoai/odh-rhaii-cluster-validator-rhel9" \
       description="Preflight validation probe for xKS clusters - verifies GPU availability, RDMA connectivity, network bandwidth, required CRDs, and inference readiness before AI workload deployment" \
       maintainer="Red Hat LLM-D Team" \
       io.k8s.display-name="RHAII Cluster Validator" \
-      io.k8s.description="Preflight validation probe for xKS clusters - verifies GPU availability, RDMA connectivity, network bandwidth, required CRDs, and inference readiness before AI workload deployment"
+      io.k8s.description="Preflight validation probe for xKS clusters - verifies GPU availability, RDMA connectivity, network bandwidth, required CRDs, and inference readiness before AI workload deployment" \
+      org.opencontainers.image.description="Preflight validation probe for xKS clusters - verifies GPU availability, RDMA connectivity, network bandwidth, required CRDs, and inference readiness before AI workload deployment" \
+      org.opencontainers.image.source="https://github.com/opendatahub-io/rhaii-cluster-validation"
 
 
 # Install tools needed by the agent
