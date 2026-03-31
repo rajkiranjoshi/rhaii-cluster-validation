@@ -122,11 +122,10 @@ func hasRDMACapability(_ context.Context, dev string) bool {
 		portPath := filepath.Join(portsPath, port.Name())
 
 		// Step 1: InfiniBand link layer — always RDMA-capable.
-		llData, err := os.ReadFile(filepath.Join(portPath, "link_layer"))
-		if err != nil {
-			continue
+		linkLayer := ""
+		if llData, err := os.ReadFile(filepath.Join(portPath, "link_layer")); err == nil {
+			linkLayer = strings.TrimSpace(string(llData))
 		}
-		linkLayer := strings.TrimSpace(string(llData))
 		if linkLayer == "InfiniBand" {
 			return true
 		}

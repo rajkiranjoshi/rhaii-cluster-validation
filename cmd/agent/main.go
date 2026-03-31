@@ -341,7 +341,7 @@ func newRunCmd() *cobra.Command {
 				}
 			}
 
-			if checkMode == CheckModeNetworking || checkMode == CheckModeAll {
+			if checkMode == CheckModeNetworking || checkMode == CheckModeNetChecks || checkMode == CheckModeAll {
 				rdmaType, err := checks.NormalizeRDMAType(os.Getenv("RDMA_TYPE"))
 				if err != nil {
 					return err
