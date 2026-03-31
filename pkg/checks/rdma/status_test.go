@@ -4,9 +4,9 @@ import "testing"
 
 func TestParseIBStat(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		input string
-		want []NICInfo
+		want  []NICStatusInfo
 	}{
 		{
 			name: "single CA single port active",
@@ -27,8 +27,8 @@ func TestParseIBStat(t *testing.T) {
 		Capability mask: 0x00010000
 		Port GUID: 0x0017a4fffea6c260
 		Link layer: InfiniBand`,
-			want: []NICInfo{
-				{Name: "mlx5_0/port1", State: "Active", Rate: "200"},
+			want: []NICStatusInfo{
+				{Name: "mlx5_0/port1", State: "Active", Rate: "200", LinkLayer: "InfiniBand"},
 			},
 		},
 		{
@@ -40,13 +40,15 @@ func TestParseIBStat(t *testing.T) {
 		State: Active
 		Physical state: LinkUp
 		Rate: 200
+		Link layer: Ethernet
 	Port 2:
 		State: Down
 		Physical state: Disabled
-		Rate: 10`,
-			want: []NICInfo{
-				{Name: "mlx5_0/port1", State: "Active", Rate: "200"},
-				{Name: "mlx5_0/port2", State: "Down", Rate: "10"},
+		Rate: 10
+		Link layer: Ethernet`,
+			want: []NICStatusInfo{
+				{Name: "mlx5_0/port1", State: "Active", Rate: "200", LinkLayer: "Ethernet"},
+				{Name: "mlx5_0/port2", State: "Down", Rate: "10", LinkLayer: "Ethernet"},
 			},
 		},
 		{
@@ -58,6 +60,7 @@ func TestParseIBStat(t *testing.T) {
 		State: Active
 		Physical state: LinkUp
 		Rate: 200
+		Link layer: InfiniBand
 
 CA 'mlx5_1'
 	CA type: MT4123
@@ -65,10 +68,35 @@ CA 'mlx5_1'
 	Port 1:
 		State: Active
 		Physical state: LinkUp
-		Rate: 400`,
-			want: []NICInfo{
-				{Name: "mlx5_0/port1", State: "Active", Rate: "200"},
-				{Name: "mlx5_1/port1", State: "Active", Rate: "400"},
+		Rate: 400
+		Link layer: InfiniBand`,
+			want: []NICStatusInfo{
+				{Name: "mlx5_0/port1", State: "Active", Rate: "200", LinkLayer: "InfiniBand"},
+				{Name: "mlx5_1/port1", State: "Active", Rate: "400", LinkLayer: "InfiniBand"},
+			},
+		},
+		{
+			name: "mixed IB and Ethernet",
+			input: `CA 'mlx5_0'
+	CA type: MT4123
+	Number of ports: 1
+	Port 1:
+		State: Active
+		Physical state: LinkUp
+		Rate: 200
+		Link layer: InfiniBand
+
+CA 'mlx5_1'
+	CA type: MT4125
+	Number of ports: 1
+	Port 1:
+		State: Down
+		Physical state: Disabled
+		Rate: 100
+		Link layer: Ethernet`,
+			want: []NICStatusInfo{
+				{Name: "mlx5_0/port1", State: "Active", Rate: "200", LinkLayer: "InfiniBand"},
+				{Name: "mlx5_1/port1", State: "Down", Rate: "100", LinkLayer: "Ethernet"},
 			},
 		},
 		{
@@ -80,6 +108,7 @@ CA 'mlx5_1'
 		State: Down
 		Physical state: Disabled
 		Rate: 10
+		Link layer: InfiniBand
 
 CA 'mlx5_1'
 	CA type: MT4123
@@ -87,10 +116,11 @@ CA 'mlx5_1'
 	Port 1:
 		State: Down
 		Physical state: Disabled
-		Rate: 10`,
-			want: []NICInfo{
-				{Name: "mlx5_0/port1", State: "Down", Rate: "10"},
-				{Name: "mlx5_1/port1", State: "Down", Rate: "10"},
+		Rate: 10
+		Link layer: InfiniBand`,
+			want: []NICStatusInfo{
+				{Name: "mlx5_0/port1", State: "Down", Rate: "10", LinkLayer: "InfiniBand"},
+				{Name: "mlx5_1/port1", State: "Down", Rate: "10", LinkLayer: "InfiniBand"},
 			},
 		},
 		{
@@ -115,6 +145,9 @@ CA 'mlx5_1'
 				}
 				if nic.Rate != tt.want[i].Rate {
 					t.Errorf("nic[%d].Rate = %q, want %q", i, nic.Rate, tt.want[i].Rate)
+				}
+				if nic.LinkLayer != tt.want[i].LinkLayer {
+					t.Errorf("nic[%d].LinkLayer = %q, want %q", i, nic.LinkLayer, tt.want[i].LinkLayer)
 				}
 			}
 		})

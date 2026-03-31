@@ -18,7 +18,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-
 const (
 	CheckModeGPU          = "gpu"
 	CheckModeNetworking   = "networking"
@@ -343,9 +342,9 @@ func newRunCmd() *cobra.Command {
 
 			if checkMode == CheckModeNetworking || checkMode == CheckModeAll {
 				rdmaType := checks.NormalizeRDMAType(os.Getenv("RDMA_TYPE"))
-				r.AddCheck(rdma.NewTopologyCheck(nodeName, rdmaType))
 				r.AddCheck(rdma.NewDevicesCheck(nodeName))
-				r.AddCheck(rdma.NewStatusCheck(nodeName))
+				r.AddCheck(rdma.NewStatusCheck(nodeName, rdmaType))
+				r.AddCheck(rdma.NewTopologyCheck(nodeName, rdmaType))
 			}
 
 			if bandwidth {
@@ -358,10 +357,10 @@ func newRunCmd() *cobra.Command {
 
 			report, err := r.Run(ctx)
 			if err != nil {
-				return err
+				os.Exit(1)
 			}
 			if runner.HasFailures(report) {
-				return fmt.Errorf("validation failed: one or more checks reported FAIL")
+				os.Exit(1)
 			}
 			return nil
 		},

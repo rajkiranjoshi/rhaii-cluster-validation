@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/config"
 )
 
 // Check is the interface all validation checks must implement.
@@ -99,12 +101,12 @@ type NodeReport struct {
 }
 
 // NormalizeRDMAType validates and normalizes an RDMA type string.
-// Returns the lowercased type if valid ("ib" or "roce"), empty string
-// for empty input, or empty string for unknown values.
-func NormalizeRDMAType(rdmaType string) string {
-	rdmaType = strings.ToLower(strings.TrimSpace(rdmaType))
-	if rdmaType == "ib" || rdmaType == "roce" {
-		return rdmaType
+// Returns the typed RDMAType if valid ("ib" or "roce"), or empty for
+// empty/unknown input.
+func NormalizeRDMAType(rdmaType string) config.RDMAType {
+	rt := config.RDMAType(strings.ToLower(strings.TrimSpace(rdmaType)))
+	if rt == config.RDMATypeIB || rt == config.RDMATypeRoCE {
+		return rt
 	}
 	return ""
 }
