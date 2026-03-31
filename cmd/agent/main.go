@@ -18,7 +18,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-
 const (
 	CheckModeGPU          = "gpu"
 	CheckModeNetworking   = "networking"
@@ -61,7 +60,8 @@ func main() {
 	rootCmd.AddCommand(newTCPLatClientCmd())
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		// TODO: surface error details via structured logging or JSON
+		// instead of stderr to avoid interleaving with agent JSON output.
 		os.Exit(1)
 	}
 }
@@ -341,11 +341,14 @@ func newRunCmd() *cobra.Command {
 				}
 			}
 
-			if checkMode == CheckModeNetworking || checkMode == CheckModeAll {
-				rdmaType := checks.NormalizeRDMAType(os.Getenv("RDMA_TYPE"))
-				r.AddCheck(rdma.NewTopologyCheck(nodeName, rdmaType))
+			if checkMode == CheckModeNetworking || checkMode == CheckModeNetChecks || checkMode == CheckModeAll {
+				rdmaType, err := checks.NormalizeRDMAType(os.Getenv("RDMA_TYPE"))
+				if err != nil {
+					return err
+				}
 				r.AddCheck(rdma.NewDevicesCheck(nodeName))
-				r.AddCheck(rdma.NewStatusCheck(nodeName))
+				r.AddCheck(rdma.NewStatusCheck(nodeName, rdmaType))
+				r.AddCheck(rdma.NewTopologyCheck(nodeName, rdmaType))
 			}
 
 			if bandwidth {
@@ -361,7 +364,7 @@ func newRunCmd() *cobra.Command {
 				return err
 			}
 			if runner.HasFailures(report) {
-				return fmt.Errorf("validation failed: one or more checks reported FAIL")
+				return fmt.Errorf("one or more checks failed")
 			}
 			return nil
 		},

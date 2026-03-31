@@ -28,10 +28,10 @@ const unknownPathPenalty = 50
 // TopologyCheck discovers GPU-NIC-NUMA-PCIe mapping on the node.
 type TopologyCheck struct {
 	nodeName string
-	rdmaType string // "ib", "roce", or "" (all)
+	rdmaType config.RDMAType
 }
 
-func NewTopologyCheck(nodeName, rdmaType string) *TopologyCheck {
+func NewTopologyCheck(nodeName string, rdmaType config.RDMAType) *TopologyCheck {
 	return &TopologyCheck{nodeName: nodeName, rdmaType: rdmaType}
 }
 
@@ -238,8 +238,7 @@ func discoverAMDGPUs(ctx context.Context) ([]checks.GPUInfo, error) {
 // discoverNICs finds RDMA devices with PCIe addresses and link layer type.
 // rdmaType filters by link type: "ib" keeps InfiniBand, "roce" keeps Ethernet,
 // empty keeps all.
-func discoverNICs(ctx context.Context, rdmaType string) ([]checks.NICInfo, error) {
-	rdmaType = checks.NormalizeRDMAType(rdmaType)
+func discoverNICs(ctx context.Context, rdmaType config.RDMAType) ([]checks.NICInfo, error) {
 	output, err := sysfsExec(ctx, "ls", "/sys/class/infiniband/")
 	if err != nil {
 		return nil, fmt.Errorf("no infiniband devices: %w", err)
@@ -282,10 +281,10 @@ func discoverNICs(ctx context.Context, rdmaType string) ([]checks.NICInfo, error
 			pciAddr = ""
 			pciePath = nil
 		}
-		if rdmaType == string(config.RDMATypeIB) && linkLayer != checks.LinkLayerInfiniBand {
+		if rdmaType == config.RDMATypeIB && linkLayer != checks.LinkLayerInfiniBand {
 			continue
 		}
-		if rdmaType == string(config.RDMATypeRoCE) && linkLayer != checks.LinkLayerEthernet {
+		if rdmaType == config.RDMATypeRoCE && linkLayer != checks.LinkLayerEthernet {
 			continue
 		}
 

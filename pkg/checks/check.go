@@ -3,8 +3,11 @@ package checks
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
+
+	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/config"
 )
 
 // Check is the interface all validation checks must implement.
@@ -99,14 +102,17 @@ type NodeReport struct {
 }
 
 // NormalizeRDMAType validates and normalizes an RDMA type string.
-// Returns the lowercased type if valid ("ib" or "roce"), empty string
-// for empty input, or empty string for unknown values.
-func NormalizeRDMAType(rdmaType string) string {
-	rdmaType = strings.ToLower(strings.TrimSpace(rdmaType))
-	if rdmaType == "ib" || rdmaType == "roce" {
-		return rdmaType
+// Returns the typed RDMAType if valid ("ib" or "roce"), empty for
+// empty input, or an error for unrecognized values.
+func NormalizeRDMAType(rdmaType string) (config.RDMAType, error) {
+	rt := config.RDMAType(strings.ToLower(strings.TrimSpace(rdmaType)))
+	if rt == "" {
+		return "", nil
 	}
-	return ""
+	if rt == config.RDMATypeIB || rt == config.RDMATypeRoCE {
+		return rt, nil
+	}
+	return "", fmt.Errorf("invalid RDMA_TYPE %q: must be %q, %q, or empty", rdmaType, config.RDMATypeIB, config.RDMATypeRoCE)
 }
 
 // ExtractTopology finds the gpu_nic_topology check result and deserializes
