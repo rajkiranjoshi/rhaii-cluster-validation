@@ -55,10 +55,15 @@ func (c *DevicesCheck) Run(ctx context.Context) checks.Result {
 		Name:     c.Name(),
 	}
 
-	if _, err := os.Stat("/dev/infiniband"); os.IsNotExist(err) {
+	if _, err := os.Stat("/dev/infiniband"); err != nil {
 		r.Status = checks.StatusFail
-		r.Message = "/dev/infiniband not found"
-		r.Remediation = "Enable RDMA networking on node pool"
+		if os.IsNotExist(err) {
+			r.Message = "/dev/infiniband not found"
+			r.Remediation = "Enable RDMA networking on node pool"
+		} else {
+			r.Message = fmt.Sprintf("Cannot access /dev/infiniband: %v", err)
+			r.Remediation = "Check the device mount and container permissions"
+		}
 		return r
 	}
 
