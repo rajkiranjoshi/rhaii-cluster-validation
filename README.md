@@ -4,10 +4,13 @@ kubectl plugin for validating GPU cluster readiness for AI/ML workloads.
 
 ## Quick Start
 
-### Option 1: Download Binary (No Build Required)
+### Option 1: Download Binary (Linux, No Build Required)
 
 ```bash
 # Extract kubectl plugin from published container image
+make download
+
+# Or manually:
 docker run --rm --entrypoint cat ghcr.io/opendatahub-io/rhaii-cluster-validation/odh-rhaii-cluster-validator:latest \
   /usr/local/bin/rhaii-validator > kubectl-rhaii_validate
 chmod +x kubectl-rhaii_validate
@@ -21,6 +24,8 @@ kubectl rhaii-validate all --debug    # Keep pods alive for inspection
 kubectl rhaii-validate all -o json    # JSON output
 kubectl rhaii-validate clean          # Cleanup
 ```
+
+> **macOS users:** `make download` extracts a Linux binary from the container. Use `make install` to build from source instead.
 
 ### Option 2: Container Image (No Install)
 
