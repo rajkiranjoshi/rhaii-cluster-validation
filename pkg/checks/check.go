@@ -3,6 +3,7 @@ package checks
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -101,14 +102,17 @@ type NodeReport struct {
 }
 
 // NormalizeRDMAType validates and normalizes an RDMA type string.
-// Returns the typed RDMAType if valid ("ib" or "roce"), or empty for
-// empty/unknown input.
-func NormalizeRDMAType(rdmaType string) config.RDMAType {
+// Returns the typed RDMAType if valid ("ib" or "roce"), empty for
+// empty input, or an error for unrecognized values.
+func NormalizeRDMAType(rdmaType string) (config.RDMAType, error) {
 	rt := config.RDMAType(strings.ToLower(strings.TrimSpace(rdmaType)))
-	if rt == config.RDMATypeIB || rt == config.RDMATypeRoCE {
-		return rt
+	if rt == "" {
+		return "", nil
 	}
-	return ""
+	if rt == config.RDMATypeIB || rt == config.RDMATypeRoCE {
+		return rt, nil
+	}
+	return "", fmt.Errorf("invalid RDMA_TYPE %q: must be %q, %q, or empty", rdmaType, config.RDMATypeIB, config.RDMATypeRoCE)
 }
 
 // ExtractTopology finds the gpu_nic_topology check result and deserializes

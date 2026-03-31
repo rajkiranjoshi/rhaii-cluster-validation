@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/checks"
@@ -39,14 +40,18 @@ func (c *DevicesCheck) Run(ctx context.Context) checks.Result {
 	output, err := exec.CommandContext(ctx, "ibv_devices").Output()
 	var verbsDevices []string
 	if err != nil {
-		sysOutput, sysErr := exec.CommandContext(ctx, "ls", "/sys/class/infiniband/").Output()
+		entries, sysErr := os.ReadDir("/sys/class/infiniband")
 		if sysErr != nil {
 			r.Status = checks.StatusFail
 			r.Message = fmt.Sprintf("ibv_devices failed: %v; sysfs fallback also failed", err)
 			r.Remediation = "Check RDMA device plugin and network operator installation"
 			return r
 		}
-		verbsDevices = strings.Fields(strings.TrimSpace(string(sysOutput)))
+		for _, e := range entries {
+			if e.IsDir() {
+				verbsDevices = append(verbsDevices, e.Name())
+			}
+		}
 	} else {
 		verbsDevices = parseIBVDevices(string(output))
 	}
@@ -88,19 +93,73 @@ func (c *DevicesCheck) Run(ctx context.Context) checks.Result {
 
 const zeroGID = "0000:0000:0000:0000:0000:0000:0000:0000"
 
-// hasRDMACapability checks if a device has at least one non-zero GID,
-// indicating real RDMA transport (IB or RoCE) vs an SR-IOV VF with no RDMA.
+// hasRDMACapability determines whether a /sys/class/infiniband device is a
+// genuine RDMA-capable NIC (InfiniBand or RoCE) rather than a phantom verbs
+// device (e.g. Azure Accelerated Networking SR-IOV VFs that expose mlx5_ib
+// entries but have no actual RDMA transport).
+//
+// Detection strategy (per port):
+//  1. InfiniBand link_layer → immediately capable (IB devices are always
+//     RDMA-capable regardless of link state or GID table).
+//  2. Ethernet link_layer (RoCE) → check gid_attrs/ndevs/ for a netdev
+//     association. This persists even when the link is administratively down,
+//     so it avoids false negatives for capable-but-down RoCE NICs. Azure AN
+//     phantom VFs have an empty ndevs directory because the hypervisor blocks
+//     RoCE — the kernel never creates the netdev-to-GID association.
+//  3. GID scan fallback → for older kernels that may not expose gid_attrs,
+//     scan all GID entries for any non-zero value.
 func hasRDMACapability(_ context.Context, dev string) bool {
-	gid0 := fmt.Sprintf("/sys/class/infiniband/%s/ports/1/gids/0", dev)
-	if _, err := os.Stat(gid0); os.IsNotExist(err) {
-		return false
-	}
-	data, err := os.ReadFile(gid0)
+	portsPath := filepath.Join("/sys/class/infiniband", dev, "ports")
+	ports, err := os.ReadDir(portsPath)
 	if err != nil {
 		return false
 	}
-	trimmed := strings.TrimSpace(string(data))
-	return trimmed != "" && trimmed != zeroGID
+
+	for _, port := range ports {
+		if !port.IsDir() {
+			continue
+		}
+		portPath := filepath.Join(portsPath, port.Name())
+
+		// Step 1: InfiniBand link layer — always RDMA-capable.
+		llData, err := os.ReadFile(filepath.Join(portPath, "link_layer"))
+		if err != nil {
+			continue
+		}
+		linkLayer := strings.TrimSpace(string(llData))
+		if linkLayer == "InfiniBand" {
+			return true
+		}
+
+		// Step 2: For Ethernet (RoCE), check if the kernel has associated a
+		// netdev with this port. Real RoCE NICs have ndevs entries even when
+		// the link is down; Azure AN phantom VFs have an empty ndevs dir.
+		ndevsPath := filepath.Join(portPath, "gid_attrs", "ndevs")
+		if ndevs, err := os.ReadDir(ndevsPath); err == nil {
+			for _, ndev := range ndevs {
+				data, err := os.ReadFile(filepath.Join(ndevsPath, ndev.Name()))
+				if err == nil && strings.TrimSpace(string(data)) != "" {
+					return true
+				}
+			}
+		}
+
+		// Step 3: GID scan fallback for kernels without gid_attrs.
+		gidsPath := filepath.Join(portPath, "gids")
+		if gids, err := os.ReadDir(gidsPath); err == nil {
+			for _, gidFile := range gids {
+				data, err := os.ReadFile(filepath.Join(gidsPath, gidFile.Name()))
+				if err != nil {
+					continue
+				}
+				if gid := strings.TrimSpace(string(data)); gid != "" && gid != zeroGID {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 func parseIBVDevices(output string) []string {

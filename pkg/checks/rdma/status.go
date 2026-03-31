@@ -2,7 +2,9 @@ package rdma
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -33,21 +35,28 @@ func (c *StatusCheck) Run(ctx context.Context) checks.Result {
 
 	// Check if any device is actually RDMA-capable before running ibstat.
 	// SR-IOV VFs appear in /sys/class/infiniband but have no GIDs.
-	sysDevs, err := exec.CommandContext(ctx, "ls", "/sys/class/infiniband/").Output()
-	if err == nil {
-		devs := strings.Fields(strings.TrimSpace(string(sysDevs)))
-		hasRDMA := false
-		for _, dev := range devs {
-			if hasRDMACapability(ctx, dev) {
-				hasRDMA = true
-				break
-			}
-		}
-		if !hasRDMA {
+	entries, err := os.ReadDir("/sys/class/infiniband")
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
 			r.Status = checks.StatusSkip
-			r.Message = "No RDMA-capable devices found (verbs-only or no GIDs), skipping link status check"
+			r.Message = "No RDMA devices present (/sys/class/infiniband not found)"
 			return r
 		}
+		r.Status = checks.StatusFail
+		r.Message = fmt.Sprintf("failed to read /sys/class/infiniband: %v", err)
+		return r
+	}
+	hasRDMA := false
+	for _, entry := range entries {
+		if entry.IsDir() && hasRDMACapability(ctx, entry.Name()) {
+			hasRDMA = true
+			break
+		}
+	}
+	if !hasRDMA {
+		r.Status = checks.StatusSkip
+		r.Message = "No RDMA-capable devices found (verbs-only or no GIDs), skipping link status check"
+		return r
 	}
 
 	output, err := exec.CommandContext(ctx, "ibstat").Output()

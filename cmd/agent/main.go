@@ -60,7 +60,8 @@ func main() {
 	rootCmd.AddCommand(newTCPLatClientCmd())
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		// TODO: surface error details via structured logging or JSON
+		// instead of stderr to avoid interleaving with agent JSON output.
 		os.Exit(1)
 	}
 }
@@ -341,7 +342,10 @@ func newRunCmd() *cobra.Command {
 			}
 
 			if checkMode == CheckModeNetworking || checkMode == CheckModeAll {
-				rdmaType := checks.NormalizeRDMAType(os.Getenv("RDMA_TYPE"))
+				rdmaType, err := checks.NormalizeRDMAType(os.Getenv("RDMA_TYPE"))
+				if err != nil {
+					return err
+				}
 				r.AddCheck(rdma.NewDevicesCheck(nodeName))
 				r.AddCheck(rdma.NewStatusCheck(nodeName, rdmaType))
 				r.AddCheck(rdma.NewTopologyCheck(nodeName, rdmaType))
@@ -357,10 +361,10 @@ func newRunCmd() *cobra.Command {
 
 			report, err := r.Run(ctx)
 			if err != nil {
-				os.Exit(1)
+				return err
 			}
 			if runner.HasFailures(report) {
-				os.Exit(1)
+				return fmt.Errorf("one or more checks failed")
 			}
 			return nil
 		},
