@@ -14,6 +14,7 @@ images:
 
   # Per-job image overrides (empty string = use default)
   jobs:
-    iperf3: ""  # TCP bandwidth testing
-    rdma: ""    # RDMA bandwidth testing (ib_write_bw)
-    nccl: ""    # NCCL all-reduce testing (future)
+    iperf3: ""    # TCP bandwidth testing
+    rdma: ""      # RDMA bandwidth testing (ib_write_bw)
+    nccl: ""      # NCCL all-reduce testing (future)
+    pingmesh: ""  # RDMA connectivity mesh (ibv_rc_pingpong)

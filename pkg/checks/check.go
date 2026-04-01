@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/config"
 )
+
+// ValidDeviceName matches safe RDMA device names (e.g., mlx5_0, ibp0).
+var ValidDeviceName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // Check is the interface all validation checks must implement.
 type Check interface {

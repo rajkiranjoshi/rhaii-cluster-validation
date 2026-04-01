@@ -2,7 +2,6 @@ package rdma
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/checks"
@@ -10,9 +9,6 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 )
-
-// validDeviceName matches safe RDMA device names (e.g., mlx5_0, ibp0)
-var validDeviceName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // RDMAWEPJob implements the Job interface for whole-endpoint RDMA bandwidth testing.
 // It runs ib_write_bw on ALL NICs in parallel from a single pod and sums the results.
@@ -107,7 +103,7 @@ func (j *RDMAWEPJob) serverScript() []string {
 	base := j.ibArgs()
 	var cmds []string
 	for i, dev := range j.Devices {
-		if !validDeviceName.MatchString(dev) {
+		if !checks.ValidDeviceName.MatchString(dev) {
 			continue
 		}
 		port := 18515 + i
@@ -128,7 +124,7 @@ func (j *RDMAWEPJob) clientScript(serverIP string) []string {
 	var cmds []string
 	cmds = append(cmds, "mkdir -p /tmp/wep")
 	for i, dev := range j.Devices {
-		if !validDeviceName.MatchString(dev) {
+		if !checks.ValidDeviceName.MatchString(dev) {
 			continue
 		}
 		port := 18515 + i

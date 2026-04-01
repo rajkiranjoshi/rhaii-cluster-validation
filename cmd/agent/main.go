@@ -22,6 +22,7 @@ const (
 	CheckModeGPU          = "gpu"
 	CheckModeNetworking   = "networking"
 	CheckModeNetChecks    = "net-checks"
+	CheckModeNetPing      = "net-ping"
 	CheckModeNetBandwidth = "net-bandwidth"
 	CheckModeAll          = "all"
 )
@@ -49,6 +50,7 @@ func main() {
 	rootCmd.AddCommand(newGPUCmd())
 	rootCmd.AddCommand(newNetworkingCmd())
 	rootCmd.AddCommand(newNetChecksCmd())
+	rootCmd.AddCommand(newNetPingCmd())
 	rootCmd.AddCommand(newNetBandwidthCmd())
 	rootCmd.AddCommand(newAllCmd())
 	rootCmd.AddCommand(newDepsCmd())
@@ -95,8 +97,8 @@ func newNetworkingCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "networking",
 		Short: "Run network bandwidth tests across GPU nodes",
-		Long: `Tests TCP and RDMA bandwidth between GPU nodes using ring topology.
-Requires 2+ GPU nodes. Each node is tested as both sender and receiver.`,
+		Long: `Runs per-node networking checks, RDMA connectivity mesh (pingmesh), and
+bandwidth tests between GPU nodes. Requires 2+ GPU nodes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.CheckMode = CheckModeNetworking
 			return runDeploy(opts, func(ctrl *controller.Controller) {
@@ -126,6 +128,27 @@ Discovers GPU-NIC-NUMA topology, validates RDMA device presence, and checks NIC 
 Results are stored in the report ConfigMap for use by net-bandwidth.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.CheckMode = CheckModeNetChecks
+			return runDeploy(opts, func(ctrl *controller.Controller) {})
+		},
+	}
+
+	addDeployFlags(cmd, &opts)
+	return cmd
+}
+
+// --- net-ping subcommand ---
+
+func newNetPingCmd() *cobra.Command {
+	var opts controller.Options
+
+	cmd := &cobra.Command{
+		Use:   "net-ping",
+		Short: "Run RDMA data-plane connectivity mesh (pingmesh)",
+		Long: `Tests RDMA data-plane connectivity between all GPU-paired NICs across nodes
+using ibv_rc_pingpong. Requires topology from a previous net-checks run.
+Reports rail-only and cross-rail connectivity status.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts.CheckMode = CheckModeNetPing
 			return runDeploy(opts, func(ctrl *controller.Controller) {})
 		},
 	}
@@ -168,7 +191,7 @@ func newAllCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "all",
 		Short: "Run all checks (gpu + networking)",
-		Long:  `Full cluster validation: GPU hardware checks on all nodes, then network bandwidth tests between nodes.`,
+		Long:  `Full cluster validation: GPU hardware checks, RDMA connectivity mesh (pingmesh), and network bandwidth tests.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.CheckMode = CheckModeAll
 			return runDeploy(opts, func(ctrl *controller.Controller) {

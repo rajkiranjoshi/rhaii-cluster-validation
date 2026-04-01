@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/checks"
@@ -14,6 +16,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
+
+// NodePair identifies a server/client node combination for pairwise testing.
+type NodePair struct {
+	Server string
+	Client string
+}
 
 // Runner orchestrates server/client job lifecycle for multi-node tests.
 type Runner struct {
@@ -66,6 +74,125 @@ func (r *Runner) RunStar(ctx context.Context, jobs []Job, serverNode string, cli
 	fmt.Fprintf(r.output, "  Mode: star\n")
 	fmt.Fprintf(r.output, "  Server: %s, Clients: %s\n", serverNode, strings.Join(clientNodes, ", "))
 	return r.runJobsOnPair(ctx, jobs, serverNode, clientNodes)
+}
+
+// RunPairwise runs N-choose-2 node pairs using round-robin tournament scheduling.
+// Disjoint pairs within each round run in parallel. Each pair is retried up to
+// maxRetries total attempts. Returns results keyed by NodePair for caller classification.
+func (r *Runner) RunPairwise(ctx context.Context, jobs map[NodePair]Job, maxRetries int) (map[NodePair][]JobResult, error) {
+	// Extract unique nodes
+	nodeSet := make(map[string]bool)
+	for pair := range jobs {
+		nodeSet[pair.Server] = true
+		nodeSet[pair.Client] = true
+	}
+	nodes := make([]string, 0, len(nodeSet))
+	for n := range nodeSet {
+		nodes = append(nodes, n)
+	}
+	sort.Strings(nodes)
+
+	schedule := roundRobinSchedule(nodes)
+	fmt.Fprintf(r.output, "  Mode: pairwise (%d pairs, %d rounds)\n", len(jobs), len(schedule))
+
+	results := make(map[NodePair][]JobResult)
+	var mu sync.Mutex
+
+	for roundIdx, round := range schedule {
+		fmt.Fprintf(r.output, "\n  --- Round %d/%d (%d parallel pairs) ---\n", roundIdx+1, len(schedule), len(round))
+
+		var wg sync.WaitGroup
+		for _, pair := range round {
+			job, ok := jobs[pair]
+			if !ok {
+				continue
+			}
+			wg.Add(1)
+			go func(p NodePair, j Job) {
+				defer wg.Done()
+				for attempt := 1; attempt <= maxRetries; attempt++ {
+					fmt.Fprintf(r.output, "  [%s→%s] attempt %d/%d\n", p.Client, p.Server, attempt, maxRetries)
+
+					jr, err := r.RunJob(ctx, j, p.Server, []string{p.Client})
+					if err != nil {
+						mu.Lock()
+						results[p] = append(results[p], JobResult{
+							JobName: j.Name(),
+							Node:    fmt.Sprintf("%s → %s", p.Client, p.Server),
+							Role:    RoleClient,
+							Status:  checks.StatusFail,
+							Message: fmt.Sprintf("job failed: %v", err),
+						})
+						mu.Unlock()
+						continue
+					}
+
+					mu.Lock()
+					results[p] = append(results[p], jr...)
+					mu.Unlock()
+
+					allPass := true
+					for _, res := range jr {
+						if res.Status != checks.StatusPass {
+							allPass = false
+							break
+						}
+					}
+					if allPass {
+						break
+					}
+				}
+			}(pair, job)
+		}
+		wg.Wait()
+	}
+
+	return results, nil
+}
+
+// roundRobinSchedule generates a round-robin tournament for N nodes.
+// Returns rounds of disjoint NodePairs. For odd N, one node sits out per round.
+func roundRobinSchedule(nodes []string) [][]NodePair {
+	n := len(nodes)
+	if n < 2 {
+		return nil
+	}
+
+	// For round-robin we need an even number; add a "bye" if odd
+	working := make([]string, len(nodes))
+	copy(working, nodes)
+	hasBye := false
+	if n%2 != 0 {
+		working = append(working, "")
+		hasBye = true
+		_ = hasBye
+	}
+	m := len(working)
+
+	var rounds [][]NodePair
+	for round := 0; round < m-1; round++ {
+		var pairs []NodePair
+		for i := 0; i < m/2; i++ {
+			a := working[i]
+			b := working[m-1-i]
+			if a == "" || b == "" {
+				continue
+			}
+			// Consistent ordering: lexicographically smaller is Server
+			if a > b {
+				a, b = b, a
+			}
+			pairs = append(pairs, NodePair{Server: a, Client: b})
+		}
+		if len(pairs) > 0 {
+			rounds = append(rounds, pairs)
+		}
+		// Rotate: fix first element, rotate rest
+		last := working[m-1]
+		copy(working[2:], working[1:m-1])
+		working[1] = last
+	}
+	return rounds
 }
 
 // runJobsOnPair runs all jobs for a single server/client pair.

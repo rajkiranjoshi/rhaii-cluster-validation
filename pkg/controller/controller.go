@@ -30,12 +30,13 @@ import (
 )
 
 const (
-	checkJobLabelKey       = "app"
-	gpuCheckJobLabelValue = "rhaii-validate-gpu-check"
-	netCheckJobLabelValue = "rhaii-validate-net-check"
-	configMapName      = "rhaii-validate-config"
-	reportCMName       = "rhaii-validate-report"
-	defaultTimeout     = 5 * time.Minute
+	checkJobLabelKey          = "app"
+	gpuCheckJobLabelValue     = "rhaii-validate-gpu-check"
+	netCheckJobLabelValue     = "rhaii-validate-net-check"
+	configMapName             = "rhaii-validate-config"
+	reportCMName              = "rhaii-validate-report"
+	pingmeshFailuresCMName    = "rhaii-validate-pingmesh-failures"
+	defaultTimeout            = 5 * time.Minute
 )
 
 // Options configures the controller behavior.
@@ -65,9 +66,10 @@ type Controller struct {
 	gpuNodes     []string           // discovered GPU node names
 	gpuCounts    map[string]int64   // GPU count per node (from allocatable)
 	gpuResource    corev1.ResourceName // e.g. "nvidia.com/gpu" or "amd.com/gpu"
-	jobs           []jobrunner.Job
-	clusterResults []checks.Result // Tier 1 (API) check results (CRDs, etc.)
-	reportStored   bool            // true after storeReport succeeds
+	jobs            []jobrunner.Job
+	clusterResults  []checks.Result        // Tier 1 (API) check results (CRDs, etc.)
+	pingmeshReport  *rdma.PingMeshReport   // populated by runPingMesh
+	reportStored    bool                   // true after storeReport succeeds
 }
 
 // AddJob registers a multi-node job to run when --bandwidth is enabled.
@@ -140,13 +142,14 @@ func (c *Controller) RunDeps(ctx context.Context) error {
 
 // jsonReport is the report structure used for both ConfigMap storage and JSON output.
 type jsonReport struct {
-	Platform      string               `json:"platform"`
-	Timestamp     string               `json:"timestamp,omitempty"`
-	ClusterChecks []checks.Result      `json:"cluster_checks,omitempty"`
-	Nodes         []checks.NodeReport  `json:"nodes"`
-	JobResults    []jobrunner.JobResult `json:"job_results,omitempty"`
-	Summary       map[string]int       `json:"summary"`
-	Status        string               `json:"status"`
+	Platform      string                `json:"platform"`
+	Timestamp     string                `json:"timestamp,omitempty"`
+	ClusterChecks []checks.Result       `json:"cluster_checks,omitempty"`
+	Nodes         []checks.NodeReport   `json:"nodes"`
+	JobResults    []jobrunner.JobResult  `json:"job_results,omitempty"`
+	Pingmesh      *rdma.PingMeshReport  `json:"pingmesh,omitempty"`
+	Summary       map[string]int        `json:"summary"`
+	Status        string                `json:"status"`
 }
 
 // countStatuses tallies pass/warn/fail/skip across all result sources.
@@ -211,8 +214,29 @@ func (c *Controller) storeReport(ctx context.Context, reports []checks.NodeRepor
 		ClusterChecks: c.clusterResults,
 		Nodes:         reports,
 		JobResults:    jobResults,
+		Pingmesh:      c.pingmeshReport,
 		Summary:       map[string]int{"pass": pass, "warn": warn, "fail": fail, "skip": skip},
 		Status:        readinessStatus(fail, warn),
+	}
+
+	// Merge with existing report: preserve fields this run didn't produce
+	// (e.g. net-ping doesn't produce Nodes/JobResults, net-bandwidth doesn't produce Pingmesh)
+	existing, getErr := c.client.CoreV1().ConfigMaps(c.opts.Namespace).Get(ctx, reportCMName, metav1.GetOptions{})
+	if getErr == nil {
+		if prev, ok := existing.Data["report.json"]; ok {
+			var old jsonReport
+			if json.Unmarshal([]byte(prev), &old) == nil {
+				if len(r.Nodes) == 0 && len(old.Nodes) > 0 {
+					r.Nodes = old.Nodes
+				}
+				if len(r.JobResults) == 0 && len(old.JobResults) > 0 {
+					r.JobResults = old.JobResults
+				}
+				if r.Pingmesh == nil && old.Pingmesh != nil {
+					r.Pingmesh = old.Pingmesh
+				}
+			}
+		}
 	}
 
 	data, err := json.MarshalIndent(r, "", "  ")
@@ -232,12 +256,13 @@ func (c *Controller) storeReport(ctx context.Context, reports []checks.NodeRepor
 	}
 
 	// Update if exists, create if not
-	existing, err := c.client.CoreV1().ConfigMaps(c.opts.Namespace).Get(ctx, reportCMName, metav1.GetOptions{})
-	if err == nil {
+	if getErr == nil {
 		existing.Data = cm.Data
 		_, err = c.client.CoreV1().ConfigMaps(c.opts.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
-	} else if apierrors.IsNotFound(err) {
+	} else if apierrors.IsNotFound(getErr) {
 		_, err = c.client.CoreV1().ConfigMaps(c.opts.Namespace).Create(ctx, cm, metav1.CreateOptions{})
+	} else {
+		return getErr
 	}
 
 	if err != nil {
@@ -375,11 +400,12 @@ func (c *Controller) Run(ctx context.Context) error {
 	fmt.Fprintln(c.output, "=== RHAII Cluster Validation ===")
 	fmt.Fprintln(c.output)
 
-	// Step 1: Cleanup previous runs (GPU check + net check + bandwidth jobs)
+	// Step 1: Cleanup previous runs (GPU check + net check + bandwidth + pingmesh jobs)
 	fmt.Fprintln(c.output, "[Step 1] Cleaning up previous runs...")
 	c.cleanupGpuCheckJobs(ctx)
 	c.cleanupNetCheckJobs(ctx)
 	c.cleanupBandwidthJobs(ctx)
+	c.cleanupPingMeshJobs(ctx)
 
 	// Step 2: Ensure namespace exists
 	fmt.Fprintln(c.output, "[Step 2] Ensuring namespace exists...")
@@ -500,6 +526,29 @@ func (c *Controller) Run(ctx context.Context) error {
 		}
 	}
 
+	// Step 7b: Run pingmesh RDMA connectivity test
+	needPingMesh := c.opts.CheckMode == "networking" || c.opts.CheckMode == "net-ping" || c.opts.CheckMode == "all"
+	if needPingMesh && len(gpuNodes) >= 2 {
+		// Load topology if net-checks didn't run this session
+		pmNetReports := netReports
+		if len(pmNetReports) == 0 {
+			stored, topoErr := c.loadTopologyFromReport(ctx, gpuNodes)
+			if topoErr != nil {
+				fmt.Fprintf(c.output, "  Warning: %v\n", topoErr)
+				fmt.Fprintln(c.output, "  Hint: run 'kubectl rhaii-validate net-checks' first to generate topology")
+			} else {
+				pmNetReports = stored
+				fmt.Fprintf(c.output, "  Loaded topology for %d node(s) from stored report\n", len(stored))
+			}
+		}
+		if len(pmNetReports) > 0 {
+			fmt.Fprintln(c.output, "[Step 7b] Running RDMA connectivity mesh (pingmesh)...")
+			if err := c.runPingMesh(ctx, gpuNodes, pmNetReports); err != nil {
+				fmt.Fprintf(c.output, "  Warning: pingmesh error: %v\n", err)
+			}
+		}
+	}
+
 	// Step 8: Run multi-node bandwidth jobs (using topology from networking reports)
 	var jobResults []jobrunner.JobResult
 	needBandwidth := c.opts.CheckMode == "networking" || c.opts.CheckMode == "net-bandwidth" || c.opts.CheckMode == "all"
@@ -552,7 +601,8 @@ func (c *Controller) Run(ctx context.Context) error {
 	}
 
 	totalReports := len(gpuReports) + len(netReports)
-	if totalReports == 0 && len(gpuNodes) > 0 {
+	hasPingmesh := c.pingmeshReport != nil
+	if totalReports == 0 && !hasPingmesh && len(gpuNodes) > 0 {
 		if c.opts.Debug {
 			return fmt.Errorf("failed to collect reports — pods kept alive for debugging")
 		}
@@ -1268,6 +1318,340 @@ func (c *Controller) runBandwidthJobs(ctx context.Context, gpuNodes []string, re
 	return append(results, jr...), err
 }
 
+// runPingMesh performs pairwise RDMA connectivity testing across all GPU nodes.
+func (c *Controller) runPingMesh(ctx context.Context, gpuNodes []string, netReports []checks.NodeReport) error {
+	topoMap := buildTopologyMap(netReports)
+	if len(topoMap) == 0 {
+		return fmt.Errorf("no topology data available for pingmesh")
+	}
+
+	// Determine RDMA type: primary from config, fallback from topology link layer
+	rdmaType, err := c.resolvePingMeshRDMAType(topoMap)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(c.output, "  RDMA type for pingmesh: %s\n", rdmaType)
+
+	gidIndex := c.cfg.Jobs.GetPingGIDIndex()
+	iterations := c.cfg.Jobs.PingIterations
+	timeout := c.cfg.Jobs.PingTimeout
+
+	// Build RDMA PodConfig (same pattern as RDMABandwidthJob)
+	rdmaCfg := &jobrunner.PodConfig{
+		ResourceRequests: make(map[string]string),
+		ResourceLimits:   make(map[string]string),
+		Annotations:      make(map[string]string),
+	}
+	for k, v := range c.cfg.Jobs.Requests {
+		rdmaCfg.ResourceRequests[k] = v
+	}
+	for k, v := range c.cfg.Jobs.Limits {
+		rdmaCfg.ResourceLimits[k] = v
+	}
+	for k, v := range c.cfg.Jobs.Annotations {
+		rdmaCfg.Annotations[k] = v
+	}
+
+	// Use validator image for pingmesh (has libibverbs-utils with ibv_rc_pingpong)
+	toolsImage := c.opts.Image
+
+	// Build job map for all N-choose-2 pairs
+	jobMap := make(map[jobrunner.NodePair]jobrunner.Job)
+	for i := 0; i < len(gpuNodes); i++ {
+		for j := i + 1; j < len(gpuNodes); j++ {
+			nodeA, nodeB := gpuNodes[i], gpuNodes[j]
+			topoA, okA := topoMap[nodeA]
+			topoB, okB := topoMap[nodeB]
+			if !okA || !okB {
+				fmt.Fprintf(c.output, "  Warning: missing topology for %s or %s, skipping pair\n", nodeA, nodeB)
+				continue
+			}
+
+			devsA := devicesFromTopology(topoA)
+			devsB := devicesFromTopology(topoB)
+			if len(devsA) == 0 || len(devsB) == 0 {
+				fmt.Fprintf(c.output, "  Warning: no RDMA NICs for %s or %s, skipping pair\n", nodeA, nodeB)
+				continue
+			}
+
+			if len(devsA) != len(devsB) {
+				fmt.Fprintf(c.output, "  Warning: NIC count mismatch: %s has %d, %s has %d\n", nodeA, len(devsA), nodeB, len(devsB))
+			}
+
+			pair := jobrunner.NodePair{Server: nodeA, Client: nodeB}
+			pmJob := rdma.NewPingMeshJob(devsA, devsB, rdmaType, gidIndex, iterations, timeout)
+			pmJob.SetPodConfig(rdmaCfg)
+			pmJob.SetServerImage(toolsImage)
+			pmJob.SetClientImage(toolsImage)
+			jobMap[pair] = pmJob
+		}
+	}
+
+	if len(jobMap) == 0 {
+		fmt.Fprintln(c.output, "  No valid node pairs for pingmesh")
+		return nil
+	}
+	fmt.Fprintf(c.output, "  Testing %d node pair(s)\n", len(jobMap))
+
+	runner := jobrunner.New(c.client, c.opts.Namespace, toolsImage, c.opts.Timeout, c.output, c.opts.Debug)
+	pairResults, err := runner.RunPairwise(ctx, jobMap, 3)
+	if err != nil {
+		return fmt.Errorf("pingmesh execution failed: %w", err)
+	}
+
+	// Classify results into rail/xrail and build report
+	report, failures := c.classifyPingMeshResults(pairResults, topoMap)
+	c.pingmeshReport = report
+
+	// Append summary checks to cluster results
+	for _, name := range []string{"rdma_conn_rail", "rdma_conn_xrail"} {
+		if summary, ok := report.Summary[name]; ok {
+			c.clusterResults = append(c.clusterResults, checks.Result{
+				Category: "networking_rdma",
+				Name:     name,
+				Node:     "(cluster)",
+				Status:   summary.Status,
+				Message:  summary.Message,
+			})
+		}
+	}
+
+	// Store detailed failures ConfigMap if needed
+	if len(failures.Failures) > 0 {
+		if err := c.storePingMeshFailures(ctx, failures); err != nil {
+			fmt.Fprintf(c.output, "  Warning: failed to store pingmesh failures: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+// resolvePingMeshRDMAType determines the RDMA type from config or topology.
+func (c *Controller) resolvePingMeshRDMAType(topoMap map[string]*checks.NodeTopology) (config.RDMAType, error) {
+	if rt := config.RDMAType(c.cfg.Jobs.RDMAType); rt == config.RDMATypeIB || rt == config.RDMATypeRoCE {
+		return rt, nil
+	}
+
+	// Infer from topology link layers
+	linkLayers := make(map[checks.LinkLayer]bool)
+	for _, topo := range topoMap {
+		for _, pair := range topo.Pairs {
+			linkLayers[pair.NIC.LinkLayer] = true
+		}
+	}
+
+	switch {
+	case len(linkLayers) == 0:
+		return "", fmt.Errorf("no NIC link layer data in topology")
+	case len(linkLayers) > 1:
+		return "", fmt.Errorf("mixed link layer types detected in GPU-paired NICs; set jobs.rdma_type explicitly")
+	case linkLayers[checks.LinkLayerEthernet]:
+		return config.RDMATypeRoCE, nil
+	case linkLayers[checks.LinkLayerInfiniBand]:
+		return config.RDMATypeIB, nil
+	default:
+		return "", fmt.Errorf("unknown link layer type in topology")
+	}
+}
+
+// devicesFromTopology extracts the list of unique NIC device names from topology Pairs.
+func devicesFromTopology(topo *checks.NodeTopology) []string {
+	seen := make(map[string]bool)
+	var devs []string
+	for _, pair := range topo.Pairs {
+		if !seen[pair.NIC.Dev] {
+			devs = append(devs, pair.NIC.Dev)
+			seen[pair.NIC.Dev] = true
+		}
+	}
+	return devs
+}
+
+// classifyPingMeshResults processes RunPairwise results into the PingMeshReport
+// and PingMeshFailuresReport, classifying each NIC pair as rail or xrail.
+func (c *Controller) classifyPingMeshResults(
+	pairResults map[jobrunner.NodePair][]jobrunner.JobResult,
+	topoMap map[string]*checks.NodeTopology,
+) (*rdma.PingMeshReport, *rdma.PingMeshFailuresReport) {
+	var (
+		railPassed, railTotal   int
+		xrailPassed, xrailTotal int
+		matrix                  []rdma.PingMeshNodePair
+		allFailures             []rdma.PingMeshFailure
+		nodePairCount           int
+	)
+
+	for pair, attempts := range pairResults {
+		nodePairCount++
+		serverTopo := topoMap[pair.Server]
+		clientTopo := topoMap[pair.Client]
+
+		// Build rail index maps: device name -> rail index (position in Pairs)
+		serverRails := buildRailMap(serverTopo)
+		clientRails := buildRailMap(clientTopo)
+
+		// Merge results across retry attempts: a NIC pair passes if it succeeded in any attempt
+		type nicPairKey struct{ src, dst string }
+		bestResult := make(map[nicPairKey]bool)
+		lastError := make(map[nicPairKey]string)
+		lastAttempt := make(map[nicPairKey]int)
+
+		for attemptIdx, jr := range attempts {
+			results, ok := jr.Details.([]rdma.PingMeshPairResult)
+			if !ok {
+				continue
+			}
+			for _, r := range results {
+				k := nicPairKey{src: r.SrcDev, dst: r.DstDev}
+				if r.Pass {
+					bestResult[k] = true
+				}
+				if !r.Pass {
+					lastError[k] = r.Error
+					lastAttempt[k] = attemptIdx + 1
+				}
+				if _, exists := bestResult[k]; !exists {
+					bestResult[k] = false
+				}
+			}
+		}
+
+		var npRail, npXRail, npAll rdma.PingMeshCount
+
+		for k, passed := range bestResult {
+			srcRail, srcOk := clientRails[k.src]
+			dstRail, dstOk := serverRails[k.dst]
+
+			isRail := srcOk && dstOk && srcRail == dstRail
+			cat := rdma.PingMeshCategoryXRail
+			if isRail {
+				cat = rdma.PingMeshCategoryRail
+			}
+
+			npAll.Total++
+			if isRail {
+				npRail.Total++
+				railTotal++
+			} else {
+				npXRail.Total++
+				xrailTotal++
+			}
+
+			if passed {
+				npAll.Passed++
+				if isRail {
+					npRail.Passed++
+					railPassed++
+				} else {
+					npXRail.Passed++
+					xrailPassed++
+				}
+			} else {
+				allFailures = append(allFailures, rdma.PingMeshFailure{
+					NodeA:    pair.Server,
+					NodeB:    pair.Client,
+					SrcDev:   k.src,
+					DstDev:   k.dst,
+					Category: cat,
+					Error:    lastError[k],
+					Attempt:  lastAttempt[k],
+				})
+			}
+		}
+
+		nodeA, nodeB := pair.Server, pair.Client
+		if nodeA > nodeB {
+			nodeA, nodeB = nodeB, nodeA
+		}
+		matrix = append(matrix, rdma.PingMeshNodePair{
+			NodeA: nodeA,
+			NodeB: nodeB,
+			Rail:  npRail,
+			XRail: npXRail,
+			All:   npAll,
+		})
+	}
+
+	report := &rdma.PingMeshReport{
+		Summary: map[string]rdma.PingMeshCheckSummary{
+			"rdma_conn_rail": {
+				Status:  pingMeshStatus(railPassed, railTotal),
+				Passed:  railPassed,
+				Total:   railTotal,
+				Message: fmt.Sprintf("Rail RDMA connectivity: %d/%d NIC pairs across %d node pairs", railPassed, railTotal, nodePairCount),
+			},
+			"rdma_conn_xrail": {
+				Status:  pingMeshStatus(xrailPassed, xrailTotal),
+				Passed:  xrailPassed,
+				Total:   xrailTotal,
+				Message: fmt.Sprintf("Cross-rail RDMA connectivity: %d/%d NIC pairs across %d node pairs", xrailPassed, xrailTotal, nodePairCount),
+			},
+		},
+		Matrix: matrix,
+	}
+
+	return report, &rdma.PingMeshFailuresReport{Failures: allFailures}
+}
+
+// buildRailMap maps NIC device names to their rail index (position in topology Pairs).
+func buildRailMap(topo *checks.NodeTopology) map[string]int {
+	m := make(map[string]int)
+	if topo == nil {
+		return m
+	}
+	for i, pair := range topo.Pairs {
+		m[pair.NIC.Dev] = i
+	}
+	return m
+}
+
+// pingMeshStatus returns PASS/WARN/FAIL based on passed/total counts.
+func pingMeshStatus(passed, total int) checks.Status {
+	switch {
+	case total == 0:
+		return checks.StatusSkip
+	case passed == total:
+		return checks.StatusPass
+	case passed > 0:
+		return checks.StatusWarn
+	default:
+		return checks.StatusFail
+	}
+}
+
+// storePingMeshFailures writes the detailed failures to a separate ConfigMap.
+func (c *Controller) storePingMeshFailures(ctx context.Context, failures *rdma.PingMeshFailuresReport) error {
+	data, err := json.MarshalIndent(failures, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal pingmesh failures: %w", err)
+	}
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pingmeshFailuresCMName,
+			Namespace: c.opts.Namespace,
+			Labels:    map[string]string{"app": "rhaii-validator"},
+		},
+		Data: map[string]string{
+			"failures.json": string(data),
+		},
+	}
+
+	existing, err := c.client.CoreV1().ConfigMaps(c.opts.Namespace).Get(ctx, pingmeshFailuresCMName, metav1.GetOptions{})
+	if err == nil {
+		existing.Data = cm.Data
+		_, err = c.client.CoreV1().ConfigMaps(c.opts.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
+	} else if apierrors.IsNotFound(err) {
+		_, err = c.client.CoreV1().ConfigMaps(c.opts.Namespace).Create(ctx, cm, metav1.CreateOptions{})
+	}
+
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(c.output, "  Pingmesh failures stored in ConfigMap %s/%s\n", c.opts.Namespace, pingmeshFailuresCMName)
+	return nil
+}
+
 // mergeNodeReports combines reports from multiple phases (e.g. GPU checks and
 // networking checks) into a single slice. Reports for the same node are merged
 // by appending results.
@@ -1655,6 +2039,16 @@ func (c *Controller) cleanupBandwidthJobs(ctx context.Context) {
 	c.deleteJobsBySelector(ctx, "app=rhaii-validate-job")
 }
 
+// cleanupPingMeshJobs deletes pingmesh jobs and the detailed failures ConfigMap.
+func (c *Controller) cleanupPingMeshJobs(ctx context.Context) {
+	c.deleteJobsBySelector(ctx, "rhaii-job-type=pingmesh")
+	// Delete detailed failures ConfigMap (not the main report)
+	err := c.client.CoreV1().ConfigMaps(c.opts.Namespace).Delete(ctx, pingmeshFailuresCMName, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		fmt.Fprintf(c.output, "  Warning: failed to delete %s ConfigMap: %v\n", pingmeshFailuresCMName, err)
+	}
+}
+
 // deleteJobsBySelector deletes jobs matching a label selector and waits for removal.
 func (c *Controller) deleteJobsBySelector(ctx context.Context, selector string) {
 	propagation := metav1.DeletePropagationForeground
@@ -1689,6 +2083,7 @@ func (c *Controller) cleanupAll(ctx context.Context) error {
 	c.cleanupGpuCheckJobs(ctx)
 	c.cleanupNetCheckJobs(ctx)
 	c.cleanupBandwidthJobs(ctx)
+	c.cleanupPingMeshJobs(ctx)
 
 	for _, del := range []func() error{
 		func() error {
@@ -1803,6 +2198,7 @@ func (c *Controller) printJSONReport(reports []checks.NodeReport, jobResults []j
 		ClusterChecks: c.clusterResults,
 		Nodes:         reports,
 		JobResults:    jobResults,
+		Pingmesh:      c.pingmeshReport,
 		Summary:       map[string]int{"pass": pass, "warn": warn, "fail": fail, "skip": skip},
 		Status:        readinessStatus(fail, warn),
 	}
