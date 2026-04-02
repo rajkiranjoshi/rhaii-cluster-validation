@@ -1352,8 +1352,7 @@ func (c *Controller) runPingMesh(ctx context.Context, gpuNodes []string, netRepo
 		rdmaCfg.Annotations[k] = v
 	}
 
-	// Use validator image for pingmesh (has libibverbs-utils with ibv_rc_pingpong)
-	toolsImage := c.opts.Image
+	toolsImage := c.cfg.Images.GetJobImage("pingmesh")
 
 	// Build job map for all N-choose-2 pairs
 	jobMap := make(map[jobrunner.NodePair]jobrunner.Job)
@@ -1379,7 +1378,7 @@ func (c *Controller) runPingMesh(ctx context.Context, gpuNodes []string, netRepo
 			}
 
 			pair := jobrunner.NodePair{Server: nodeA, Client: nodeB}
-			pmJob := rdma.NewPingMeshJob(devsA, devsB, rdmaType, gidIndex, iterations, timeout)
+			pmJob := rdma.NewPingMeshJob(nodeA, nodeB, devsA, devsB, rdmaType, gidIndex, iterations, timeout)
 			pmJob.SetPodConfig(rdmaCfg)
 			pmJob.SetServerImage(toolsImage)
 			pmJob.SetClientImage(toolsImage)

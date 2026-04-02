@@ -24,6 +24,8 @@ const (
 type PingMeshJob struct {
 	ServerDevices []string // RDMA devices on the server (destination) node
 	ClientDevices []string // RDMA devices on the client (source) node
+	ServerNode    string   // server (destination) node name
+	ClientNode    string   // client (source) node name
 	RDMAType      config.RDMAType
 	GIDIndex      int // -1 = auto-discover; >= 0 = fixed
 	Iterations    int
@@ -33,7 +35,7 @@ type PingMeshJob struct {
 	ClientImage   string
 }
 
-func NewPingMeshJob(serverDevs, clientDevs []string, rdmaType config.RDMAType, gidIndex, iterations, timeout int) *PingMeshJob {
+func NewPingMeshJob(serverNode, clientNode string, serverDevs, clientDevs []string, rdmaType config.RDMAType, gidIndex, iterations, timeout int) *PingMeshJob {
 	if iterations <= 0 {
 		iterations = defaultPingIterations
 	}
@@ -43,6 +45,8 @@ func NewPingMeshJob(serverDevs, clientDevs []string, rdmaType config.RDMAType, g
 	return &PingMeshJob{
 		ServerDevices: serverDevs,
 		ClientDevices: clientDevs,
+		ServerNode:    serverNode,
+		ClientNode:    clientNode,
 		RDMAType:      rdmaType,
 		GIDIndex:      gidIndex,
 		Iterations:    iterations,
@@ -72,6 +76,13 @@ func (j *PingMeshJob) SetPodConfig(cfg *jobrunner.PodConfig) {
 	}
 	cfg.Privileged = true
 	j.PodCfg = cfg
+}
+
+func (j *PingMeshJob) SetNameSuffix(suffix string) {
+	if j.PodCfg == nil {
+		j.PodCfg = &jobrunner.PodConfig{}
+	}
+	j.PodCfg.NameSuffix = suffix
 }
 
 func (j *PingMeshJob) GetServerImage() string    { return j.ServerImage }
@@ -180,24 +191,24 @@ func (j *PingMeshJob) clientScript(serverIP string) []string {
 		}
 	}
 
-	// Assemble JSON from results file
-	sb.WriteString(`
-printf '['
+	// Assemble JSON from results file, wrapped with node names
+	sb.WriteString(fmt.Sprintf(`
+printf '{"server_node":"%s","client_node":"%s","results":['
 first=1
 idx=0
 while IFS=: read -r cdev sdev rc; do
   [ $first -eq 0 ] && printf ','
   first=0
   if [ "$rc" -eq 0 ]; then
-    printf '{"src_dev":"%s","dst_dev":"%s","pass":true}' "$cdev" "$sdev"
+    printf '{"src_dev":"%%s","dst_dev":"%%s","pass":true}' "$cdev" "$sdev"
   else
     err=$(head -c 200 /tmp/pm/out_${idx}.txt 2>/dev/null | tr '"' "'" | tr '\n' ' ')
-    printf '{"src_dev":"%s","dst_dev":"%s","pass":false,"error":"%s"}' "$cdev" "$sdev" "$err"
+    printf '{"src_dev":"%%s","dst_dev":"%%s","pass":false,"error":"%%s"}' "$cdev" "$sdev" "$err"
   fi
   idx=$((idx + 1))
 done < /tmp/pm/results.txt
-printf ']'
-`)
+printf ']}'
+`, j.ServerNode, j.ClientNode))
 
 	return []string{"bash", "-c", sb.String()}
 }
@@ -212,20 +223,28 @@ func (j *PingMeshJob) ClientSpec(node, namespace, image, serverIP string) (*batc
 		j.clientScript(serverIP))
 }
 
-// ParseResult parses the client pod JSON array into a JobResult.
+// pingmeshClientOutput is the wrapper JSON object emitted by client pods.
+type pingmeshClientOutput struct {
+	ServerNode string                `json:"server_node"`
+	ClientNode string                `json:"client_node"`
+	Results    []PingMeshPairResult  `json:"results"`
+}
+
+// ParseResult parses the client pod JSON output into a JobResult.
 func (j *PingMeshJob) ParseResult(logs string) (*jobrunner.JobResult, error) {
-	// Defensive extraction: find the JSON array bounds
-	start := strings.Index(logs, "[")
-	end := strings.LastIndex(logs, "]")
+	// Defensive extraction: find the JSON object bounds
+	start := strings.Index(logs, "{")
+	end := strings.LastIndex(logs, "}")
 	if start < 0 || end < 0 || end <= start {
-		return nil, fmt.Errorf("no JSON array found in pingmesh client output")
+		return nil, fmt.Errorf("no JSON object found in pingmesh client output")
 	}
 	jsonStr := logs[start : end+1]
 
-	var results []PingMeshPairResult
-	if err := json.Unmarshal([]byte(jsonStr), &results); err != nil {
+	var output pingmeshClientOutput
+	if err := json.Unmarshal([]byte(jsonStr), &output); err != nil {
 		return nil, fmt.Errorf("failed to parse pingmesh JSON: %w", err)
 	}
+	results := output.Results
 
 	passed := 0
 	for _, r := range results {
