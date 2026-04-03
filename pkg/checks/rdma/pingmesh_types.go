@@ -1,6 +1,10 @@
 package rdma
 
-import "github.com/opendatahub-io/rhaii-cluster-validation/pkg/checks"
+import (
+	"time"
+
+	"github.com/opendatahub-io/rhaii-cluster-validation/pkg/checks"
+)
 
 // PingMeshCategory classifies a NIC pair as rail or cross-rail.
 type PingMeshCategory string
@@ -50,7 +54,8 @@ type PingMeshCount struct {
 
 // PingMeshFailuresReport is stored in a separate ConfigMap (only when failures exist).
 type PingMeshFailuresReport struct {
-	Failures []PingMeshFailure `json:"failures"`
+	Timestamp time.Time          `json:"timestamp"`
+	Failures  []PingMeshFailure  `json:"failures"`
 }
 
 // PingMeshFailure records a single NIC pair that failed connectivity.

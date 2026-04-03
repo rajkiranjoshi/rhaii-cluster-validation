@@ -118,12 +118,20 @@ func (j *PingMeshJob) serverTimeout() int {
 }
 
 // gidDiscoveryFunc returns the bash function for RoCEv2 GID auto-discovery.
+// Scans sysfs GID table for a RoCE v2 entry. Prefers IPv4-mapped addresses
+// (ffff: prefix) but falls back to any RoCE v2 GID. Uses continue (not break)
+// on empty entries because some systems have sparse GID tables (e.g. entries
+// 0-3 empty, first RoCE v2 at index 5).
 func gidDiscoveryFunc() string {
 	return `find_rocev2_gid() {
   local dev=$1
-  for i in $(seq 0 255); do
-    gtype=$(cat /sys/class/infiniband/$dev/ports/1/gid_attrs/types/$i 2>/dev/null)
-    [ -z "$gtype" ] && break
+  local types_dir="/sys/class/infiniband/$dev/ports/1/gid_attrs/types"
+  [ -d "$types_dir" ] || { echo "-1"; return 1; }
+  local max_gid=$(ls "$types_dir" 2>/dev/null | sort -n | tail -1)
+  [ -z "$max_gid" ] && { echo "-1"; return 1; }
+  for i in $(seq 0 $max_gid); do
+    gtype=$(cat "$types_dir/$i" 2>/dev/null)
+    [ -z "$gtype" ] && continue
     if [ "$gtype" = "RoCE v2" ]; then
       gid=$(cat /sys/class/infiniband/$dev/ports/1/gids/$i 2>/dev/null)
       if echo "$gid" | grep -q "0000:0000:0000:0000:0000:ffff:"; then
@@ -131,9 +139,9 @@ func gidDiscoveryFunc() string {
       fi
     fi
   done
-  for i in $(seq 0 255); do
-    gtype=$(cat /sys/class/infiniband/$dev/ports/1/gid_attrs/types/$i 2>/dev/null)
-    [ -z "$gtype" ] && break
+  for i in $(seq 0 $max_gid); do
+    gtype=$(cat "$types_dir/$i" 2>/dev/null)
+    [ -z "$gtype" ] && continue
     if [ "$gtype" = "RoCE v2" ]; then
       echo "$i"; return 0
     fi
