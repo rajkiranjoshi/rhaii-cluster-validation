@@ -359,6 +359,11 @@ func (c *Controller) Cleanup() error {
 		}
 	}
 
+	// Delete pingmesh failures ConfigMap (explicit clean removes everything)
+	if err := c.client.CoreV1().ConfigMaps(c.opts.Namespace).Delete(ctx, pingmeshFailuresCMName, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+		fmt.Fprintf(c.output, "  Warning: failed to delete %s: %v\n", pingmeshFailuresCMName, err)
+	}
+
 	if err := c.cleanupAll(ctx); err != nil {
 		return fmt.Errorf("cleanup failed: %w", err)
 	}
@@ -1430,10 +1435,15 @@ func (c *Controller) runPingMesh(ctx context.Context, gpuNodes []string, netRepo
 		}
 	}
 
-	// Store detailed failures ConfigMap if needed
+	// Manage detailed failures ConfigMap: update on failure, delete on full success
 	if len(failures.Failures) > 0 {
 		if err := c.storePingMeshFailures(ctx, failures); err != nil {
 			fmt.Fprintf(c.output, "  Warning: failed to store pingmesh failures: %v\n", err)
+		}
+	} else {
+		err := c.client.CoreV1().ConfigMaps(c.opts.Namespace).Delete(ctx, pingmeshFailuresCMName, metav1.DeleteOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			fmt.Fprintf(c.output, "  Warning: failed to clean up old pingmesh failures ConfigMap: %v\n", err)
 		}
 	}
 
@@ -1607,7 +1617,10 @@ func (c *Controller) classifyPingMeshResults(
 		Matrix: matrix,
 	}
 
-	return report, &rdma.PingMeshFailuresReport{Failures: allFailures}
+	return report, &rdma.PingMeshFailuresReport{
+		Timestamp: time.Now().UTC(),
+		Failures:  allFailures,
+	}
 }
 
 // buildRailMap maps NIC device names to their rail index (position in topology Pairs).
@@ -2082,14 +2095,10 @@ func (c *Controller) cleanupBandwidthJobs(ctx context.Context) {
 	c.deleteJobsBySelector(ctx, "app=rhaii-validate-job")
 }
 
-// cleanupPingMeshJobs deletes pingmesh jobs and the detailed failures ConfigMap.
+// cleanupPingMeshJobs deletes pingmesh jobs only. The failures ConfigMap is
+// managed by runPingMesh: updated on failure, deleted on full success.
 func (c *Controller) cleanupPingMeshJobs(ctx context.Context) {
 	c.deleteJobsBySelector(ctx, "rhaii-job-type=pingmesh")
-	// Delete detailed failures ConfigMap (not the main report)
-	err := c.client.CoreV1().ConfigMaps(c.opts.Namespace).Delete(ctx, pingmeshFailuresCMName, metav1.DeleteOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
-		fmt.Fprintf(c.output, "  Warning: failed to delete %s ConfigMap: %v\n", pingmeshFailuresCMName, err)
-	}
 }
 
 // deleteJobsBySelector deletes jobs matching a label selector and waits for removal.

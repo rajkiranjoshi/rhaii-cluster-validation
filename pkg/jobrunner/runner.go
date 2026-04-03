@@ -92,9 +92,12 @@ func (r *Runner) RunStar(ctx context.Context, jobs []Job, serverNode string, cli
 }
 
 // RunPairwise runs N-choose-2 node pairs using round-robin tournament scheduling.
-// Disjoint pairs within each round run in parallel. Each pair is retried up to
-// maxRetries total attempts. Returns results keyed by NodePair for caller classification.
-func (r *Runner) RunPairwise(ctx context.Context, jobs map[NodePair]Job, maxRetries int) (map[NodePair][]JobResult, error) {
+// Disjoint pairs within each round run in parallel. Each pair is tried up to
+// maxAttempts times. Returns results keyed by NodePair for caller classification.
+func (r *Runner) RunPairwise(ctx context.Context, jobs map[NodePair]Job, maxAttempts int) (map[NodePair][]JobResult, error) {
+	if maxAttempts < 1 {
+		return nil, fmt.Errorf("maxAttempts must be >= 1")
+	}
 	// Extract unique nodes
 	nodeSet := make(map[string]bool)
 	for pair := range jobs {
@@ -144,7 +147,7 @@ func (r *Runner) RunPairwise(ctx context.Context, jobs map[NodePair]Job, maxRetr
 					quietProgress: true,
 				}
 
-			for attempt := 1; attempt <= maxRetries; attempt++ {
+			for attempt := 1; attempt <= maxAttempts; attempt++ {
 				if ctx.Err() != nil {
 					break
 				}
