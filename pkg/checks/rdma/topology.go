@@ -403,10 +403,11 @@ func buildPairs(gpus []checks.GPUInfo, nics []checks.NICInfo) ([]checks.GPUNICPa
 		return numaAffinityPairing(gpus, nics), flat, checks.PairingNUMAAffinity
 	}
 
-	if len(gpus) == len(nics) {
+	if len(gpus) <= len(nics) {
 		return pcieDistancePairing(gpus, nics), false, checks.PairingPCIeDistance
 	}
 
+	// GPUs > NICs: load-balance multiple GPUs across fewer NICs
 	return numaLoadBalancePairing(gpus, nics), false, checks.PairingNUMALoadBalance
 }
 
