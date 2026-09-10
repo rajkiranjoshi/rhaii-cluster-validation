@@ -1,0 +1,13 @@
+[external-nvidia-cuda-for-rhel-9-x86_64-rpms]
+name = NVIDIA CUDA for RHEL 9 - x86_64
+baseurl = https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64
+enabled = 1
+gpgcheck = 1
+gpgkey = https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/D42D0685.pub
+
+[external-nvidia-cuda-for-rhel-9-sbsa-rpms]
+name = NVIDIA CUDA for RHEL 9 - SBSA
+baseurl = https://developer.download.nvidia.com/compute/cuda/repos/rhel9/sbsa
+enabled = 1
+gpgcheck = 1
+gpgkey = https://developer.download.nvidia.com/compute/cuda/repos/rhel9/sbsa/D42D0685.pub

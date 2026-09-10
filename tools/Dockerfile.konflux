@@ -85,6 +85,8 @@ RUN dnf install -y \
     iperf3 tcpdump pciutils libnl3 \
     && dnf clean all
 
+RUN update-crypto-policies --set DEFAULT:PQ --no-reload
+
 # Copy all shared libraries (rdma-core + libfabric)
 COPY --from=builder \
     /usr/lib64/libib* \

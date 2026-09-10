@@ -18,6 +18,34 @@ arches:
     name: automake
     evr: 1.16.2-8.el9
     sourcerpm: automake-1.16.2-8.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/aarch64/appstream/os/Packages/c/cmake-3.26.5-2.el9.aarch64.rpm
+    repoid: rhel-9-for-aarch64-appstream-eus-rpms
+    size: 7432689
+    checksum: sha256:6ac0e5e9a4fd761f8688678ac83580c7eebeacf6c241bd8089d72c4a477b22c3
+    name: cmake
+    evr: 3.26.5-2.el9
+    sourcerpm: cmake-3.26.5-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/aarch64/appstream/os/Packages/c/cmake-data-3.26.5-2.el9.noarch.rpm
+    repoid: rhel-9-for-aarch64-appstream-eus-rpms
+    size: 2488227
+    checksum: sha256:84da65a7b8921f031d15903d91c5967022620f9e96b7493c8ab8024014755ee7
+    name: cmake-data
+    evr: 3.26.5-2.el9
+    sourcerpm: cmake-3.26.5-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/aarch64/appstream/os/Packages/c/cmake-rpm-macros-3.26.5-2.el9.noarch.rpm
+    repoid: rhel-9-for-aarch64-appstream-eus-rpms
+    size: 12250
+    checksum: sha256:1c74969c8a4f21851f5b89f25ac55c689b75bed1318d0435fc3a14a49c39d0e3
+    name: cmake-rpm-macros
+    evr: 3.26.5-2.el9
+    sourcerpm: cmake-3.26.5-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/aarch64/appstream/os/Packages/l/libnl3-devel-3.11.0-1.el9.aarch64.rpm
+    repoid: rhel-9-for-aarch64-appstream-eus-rpms
+    size: 117021
+    checksum: sha256:7f9fed9ab2d406c4025fadb1b244dda9cca0a58b8be9f001d51485c19a03b7d1
+    name: libnl3-devel
+    evr: 3.11.0-1.el9
+    sourcerpm: libnl3-3.11.0-1.el9.src.rpm
   - url: https://cdn.redhat.com/content/eus/rhel9/9.6/aarch64/appstream/os/Packages/l/libtool-2.4.6-46.el9.aarch64.rpm
     repoid: rhel-9-for-aarch64-appstream-eus-rpms
     size: 598835
@@ -25,6 +53,13 @@ arches:
     name: libtool
     evr: 2.4.6-46.el9
     sourcerpm: libtool-2.4.6-46.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/aarch64/appstream/os/Packages/l/libuv-1.42.0-2.el9_4.aarch64.rpm
+    repoid: rhel-9-for-aarch64-appstream-eus-rpms
+    size: 150129
+    checksum: sha256:4dc8a40da74e0f9823356460ee11f183c70f382953700fffef0c448198a677cc
+    name: libuv
+    evr: 1:1.42.0-2.el9_4
+    sourcerpm: libuv-1.42.0-2.el9_4.src.rpm
   - url: https://cdn.redhat.com/content/eus/rhel9/9.6/aarch64/appstream/os/Packages/m/m4-1.4.19-1.el9.aarch64.rpm
     repoid: rhel-9-for-aarch64-appstream-eus-rpms
     size: 308647
@@ -88,13 +123,6 @@ arches:
     name: perl-threads-shared
     evr: 1.61-460.el9
     sourcerpm: perl-threads-shared-1.61-460.el9.src.rpm
-  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/aarch64/appstream/os/Packages/r/rdma-core-devel-54.0-2.el9_6.aarch64.rpm
-    repoid: rhel-9-for-aarch64-appstream-eus-rpms
-    size: 487603
-    checksum: sha256:24fedc293b81582ab54c227c0e6cbaab28fb1fd5335131d6fd7d03d8b1896169
-    name: rdma-core-devel
-    evr: 54.0-2.el9_6
-    sourcerpm: rdma-core-54.0-2.el9_6.src.rpm
   - url: https://cdn.redhat.com/content/eus/rhel9/9.6/aarch64/appstream/os/Packages/z/zlib-devel-1.2.11-40.el9.aarch64.rpm
     repoid: rhel-9-for-aarch64-appstream-eus-rpms
     size: 47965
@@ -109,6 +137,20 @@ arches:
     name: diffutils
     evr: 3.7-12.el9
     sourcerpm: diffutils-3.7-12.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/aarch64/baseos/os/Packages/l/libnl3-cli-3.11.0-1.el9.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-eus-rpms
+    size: 246157
+    checksum: sha256:7bc7d42569302cdc514d4e82b889d2d585bdf325c928eb23e4d65cdb7f5956d0
+    name: libnl3-cli
+    evr: 3.11.0-1.el9
+    sourcerpm: libnl3-3.11.0-1.el9.src.rpm
+  - url: https://developer.download.nvidia.com/compute/cuda/repos/rhel9/sbsa/cuda-nvml-devel-13-0-13.0.87-1.aarch64.rpm
+    repoid: external-nvidia-cuda-for-rhel-9-sbsa-rpms
+    size: 230722
+    checksum: sha256:7bf53bfaa22dbf06c6d3c437b5eb2f944583cdce896a7fbd5e55f9644e497c6a
+    name: cuda-nvml-devel-13-0
+    evr: 13.0.87-1
+    sourcerpm: cuda-nvml-devel-13-0-13.0.87-1.src.rpm
   source: []
   module_metadata: []
 - arch: x86_64
@@ -127,6 +169,34 @@ arches:
     name: automake
     evr: 1.16.2-8.el9
     sourcerpm: automake-1.16.2-8.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/x86_64/appstream/os/Packages/c/cmake-3.26.5-2.el9.x86_64.rpm
+    repoid: rhel-9-for-x86_64-appstream-eus-rpms
+    size: 9159462
+    checksum: sha256:f553370cb02b87e7388697468256556e765b102c2fcb56be6bc250cb2351e8ad
+    name: cmake
+    evr: 3.26.5-2.el9
+    sourcerpm: cmake-3.26.5-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/x86_64/appstream/os/Packages/c/cmake-data-3.26.5-2.el9.noarch.rpm
+    repoid: rhel-9-for-x86_64-appstream-eus-rpms
+    size: 2488227
+    checksum: sha256:84da65a7b8921f031d15903d91c5967022620f9e96b7493c8ab8024014755ee7
+    name: cmake-data
+    evr: 3.26.5-2.el9
+    sourcerpm: cmake-3.26.5-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/x86_64/appstream/os/Packages/c/cmake-rpm-macros-3.26.5-2.el9.noarch.rpm
+    repoid: rhel-9-for-x86_64-appstream-eus-rpms
+    size: 12250
+    checksum: sha256:1c74969c8a4f21851f5b89f25ac55c689b75bed1318d0435fc3a14a49c39d0e3
+    name: cmake-rpm-macros
+    evr: 3.26.5-2.el9
+    sourcerpm: cmake-3.26.5-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/x86_64/appstream/os/Packages/l/libnl3-devel-3.11.0-1.el9.x86_64.rpm
+    repoid: rhel-9-for-x86_64-appstream-eus-rpms
+    size: 117079
+    checksum: sha256:ec96a1a14989a1c925f7835a8eca71d72f58a2284d5d426bef03b8d0fc338600
+    name: libnl3-devel
+    evr: 3.11.0-1.el9
+    sourcerpm: libnl3-3.11.0-1.el9.src.rpm
   - url: https://cdn.redhat.com/content/eus/rhel9/9.6/x86_64/appstream/os/Packages/l/libtool-2.4.6-46.el9.x86_64.rpm
     repoid: rhel-9-for-x86_64-appstream-eus-rpms
     size: 598907
@@ -134,6 +204,13 @@ arches:
     name: libtool
     evr: 2.4.6-46.el9
     sourcerpm: libtool-2.4.6-46.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/x86_64/appstream/os/Packages/l/libuv-1.42.0-2.el9_4.x86_64.rpm
+    repoid: rhel-9-for-x86_64-appstream-eus-rpms
+    size: 154427
+    checksum: sha256:e1fab39251239ccaad2fb4dbe6c55ec1ae60f76d4ae81582b06e6a58e30879b2
+    name: libuv
+    evr: 1:1.42.0-2.el9_4
+    sourcerpm: libuv-1.42.0-2.el9_4.src.rpm
   - url: https://cdn.redhat.com/content/eus/rhel9/9.6/x86_64/appstream/os/Packages/m/m4-1.4.19-1.el9.x86_64.rpm
     repoid: rhel-9-for-x86_64-appstream-eus-rpms
     size: 311655
@@ -197,13 +274,6 @@ arches:
     name: perl-threads-shared
     evr: 1.61-460.el9
     sourcerpm: perl-threads-shared-1.61-460.el9.src.rpm
-  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/x86_64/appstream/os/Packages/r/rdma-core-devel-54.0-2.el9_6.x86_64.rpm
-    repoid: rhel-9-for-x86_64-appstream-eus-rpms
-    size: 487638
-    checksum: sha256:ca61e72bf5b8e31e2fd92d766fe1269deb947f6f62667841bfe74dda95e10eef
-    name: rdma-core-devel
-    evr: 54.0-2.el9_6
-    sourcerpm: rdma-core-54.0-2.el9_6.src.rpm
   - url: https://cdn.redhat.com/content/eus/rhel9/9.6/x86_64/appstream/os/Packages/z/zlib-devel-1.2.11-40.el9.x86_64.rpm
     repoid: rhel-9-for-x86_64-appstream-eus-rpms
     size: 48017
@@ -218,5 +288,19 @@ arches:
     name: diffutils
     evr: 3.7-12.el9
     sourcerpm: diffutils-3.7-12.el9.src.rpm
+  - url: https://cdn.redhat.com/content/eus/rhel9/9.6/x86_64/baseos/os/Packages/l/libnl3-cli-3.11.0-1.el9.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-eus-rpms
+    size: 246906
+    checksum: sha256:3825391ab5e4f930b503b80a41580edcac079fcd555dab6681331c97ca880e33
+    name: libnl3-cli
+    evr: 3.11.0-1.el9
+    sourcerpm: libnl3-3.11.0-1.el9.src.rpm
+  - url: https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-nvml-devel-13-0-13.0.87-1.x86_64.rpm
+    repoid: external-nvidia-cuda-for-rhel-9-x86_64-rpms
+    size: 224118
+    checksum: sha256:2407149740d0fc20fe8b77d4ba022e33c28c7edfd2c9f4066c6931749a840bd3
+    name: cuda-nvml-devel-13-0
+    evr: 13.0.87-1
+    sourcerpm: cuda-nvml-devel-13-0-13.0.87-1.src.rpm
   source: []
   module_metadata: []

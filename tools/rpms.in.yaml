@@ -20,15 +20,11 @@ packages:
   - iperf3
   - tcpdump
   - pciutils
-  - libibverbs
-  - libibverbs-utils
-  - libibumad
-  - librdmacm
-  - infiniband-diags
+  - libnl3
 
 arches:
   - x86_64
   - aarch64
 
 context:
-  containerfile: ../Dockerfile.konflux.validator.tools
+  containerfile: Dockerfile.konflux

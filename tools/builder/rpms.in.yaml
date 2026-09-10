@@ -1,9 +1,10 @@
 contentOrigin:
   repofiles:
     - ../../rpm-repos/redhat.repo
+    - ../../rpm-repos/nvidia-cuda.repo
 
 packages:
-  # Builder stage (build dependencies for perftest)
+  # Builder stage (build dependencies for rdma-core, libfabric, fabtests, and perftest)
   - gcc
   - gcc-c++
   - make
@@ -11,11 +12,13 @@ packages:
   - autoconf
   - automake
   - libtool
+  - pkg-config
+  - cmake
+  - ninja-build
+  - libnl3-devel
+  - python3
   - pciutils-devel
-  - rdma-core-devel
-  - libibverbs-devel
-  - librdmacm-devel
-  - libibumad-devel
+  - cuda-nvml-devel-13-0
 
 arches:
   - x86_64
@@ -23,5 +26,5 @@ arches:
 
 context:
   containerfile:
-    file: ../../Dockerfile.konflux.validator.tools
+    file: ../Dockerfile.konflux
     stageName: builder
